@@ -128,7 +128,8 @@ local function findPlayerTarget(state)
             continue
         end
 
-        local distSq = (root.Position - state.root.Position).MagnitudeSquared
+        local offset = root.Position - state.root.Position
+        local distSq = offset:Dot(offset)
         if distSq <= bestDistSq then
             bestDistSq = distSq
             best = {
@@ -160,7 +161,8 @@ local function updateTarget(state, dt)
             and isSwimming(humanoid)
 
         if valid then
-            local distSq = (root.Position - state.root.Position).MagnitudeSquared
+            local offset = root.Position - state.root.Position
+            local distSq = offset:Dot(offset)
             if distSq <= PLAYER_LOSE_RANGE * PLAYER_LOSE_RANGE then
                 return target
             end
@@ -243,7 +245,7 @@ local function updateShark(state, dt)
 
     local rootPosition = state.root.Position
     local delta = rootPosition - state.lastPosition
-    if delta.MagnitudeSquared < MIN_MOVEMENT_SQ then
+    if delta:Dot(delta) < MIN_MOVEMENT_SQ then
         state.stuckTimer += dt
         if state.stuckTimer >= STUCK_CHECK_INTERVAL then
             state.direction = rotateY(randomHorizontalUnit(), math.rad(math.random(-45, 45))).Unit
@@ -269,7 +271,8 @@ local function updateShark(state, dt)
     state.bodyGyro.CFrame = CFrame.new(rootPosition, lookPoint)
 
     if target then
-        local distSq = (target.root.Position - rootPosition).MagnitudeSquared
+        local offset = target.root.Position - rootPosition
+        local distSq = offset:Dot(offset)
         if distSq <= ATTACK_DISTANCE * ATTACK_DISTANCE then
             target.humanoid.Health = 0
             state.target = nil
