@@ -37,6 +37,7 @@ local PickaxeTiers = PickaxeConfigModule.Tiers or PickaxeConfigModule
 -- Shop Configuration
 local ShopCenter = Workspace:WaitForChild("ShopCenter") -- Ensure this part exists in Workspace
 local SELL_RADIUS = 15 -- Distance to open shop
+local SHOP_HIDE_RADIUS = 30 -- Distance to auto-close shop UI
 local SELL_ANYWHERE_PASS_ID = 1631522468
 
 -- Devs who can use "!pass sell" locally (add any co-dev IDs here)
@@ -482,13 +483,34 @@ local upcomingLabels = {} -- Store frames to update them
 -- 6b. SHOP SYSTEM
 -- ==========================================
 
+local shopOverlay = Instance.new("Frame")
+shopOverlay.Name = "ShopOverlay"
+shopOverlay.Size = UDim2.fromScale(1, 1)
+shopOverlay.BackgroundColor3 = Color3.fromRGB(6, 8, 12)
+shopOverlay.BackgroundTransparency = 0.45
+shopOverlay.Visible = false
+shopOverlay.ZIndex = 5
+shopOverlay.Parent = gui
+
 local shopFrame = Instance.new("Frame")
 shopFrame.Name = "ShopFrame"
 shopFrame.Size = UDim2.new(0.65, 0, 0.65, 0)
 shopFrame.Position = UDim2.new(0.5, 0, 1.5, 0) -- Hidden Bottom
 shopFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-shopFrame.BackgroundTransparency = 1
-shopFrame.Parent = gui
+shopFrame.BackgroundColor3 = Color3.fromRGB(12, 14, 20)
+shopFrame.BackgroundTransparency = 0.15
+shopFrame.BorderSizePixel = 0
+shopFrame.ZIndex = 6
+shopFrame.Parent = shopOverlay
+createCorner(shopFrame, 18)
+createStroke(shopFrame, THEME.BorderDefault, 1.5, 0.7)
+
+local shopPadding = Instance.new("UIPadding")
+shopPadding.PaddingTop = UDim.new(0, 16)
+shopPadding.PaddingBottom = UDim.new(0, 16)
+shopPadding.PaddingLeft = UDim.new(0, 16)
+shopPadding.PaddingRight = UDim.new(0, 16)
+shopPadding.Parent = shopFrame
 
 local shopScale = Instance.new("UIScale")
 shopScale.Parent = shopFrame
@@ -505,18 +527,29 @@ shopSidebarPad.Parent = shopSidebar
 
 -- Shop Title Area
 local shopTitleFrame = Instance.new("Frame")
-shopTitleFrame.Size = UDim2.new(1, 0, 0, 80)
+shopTitleFrame.Size = UDim2.new(1, 0, 0, 90)
 shopTitleFrame.BackgroundTransparency = 1
 shopTitleFrame.Parent = shopSidebar
 
 local shopTitle = Instance.new("TextLabel")
 shopTitle.Text = "SHOP"
 shopTitle.Font = Enum.Font.GothamBlack
-shopTitle.TextSize = 32
+shopTitle.TextSize = 34
 shopTitle.TextColor3 = THEME.TextMain
 shopTitle.BackgroundTransparency = 1
 shopTitle.Size = UDim2.new(1,0,0,30)
 shopTitle.Parent = shopTitleFrame
+
+local shopSubtitle = Instance.new("TextLabel")
+shopSubtitle.Text = "Sell ores or upgrade your tools"
+shopSubtitle.Font = Enum.Font.Gotham
+shopSubtitle.TextSize = 16
+shopSubtitle.TextColor3 = THEME.TextDim
+shopSubtitle.BackgroundTransparency = 1
+shopSubtitle.Size = UDim2.new(1,0,0,18)
+shopSubtitle.Position = UDim2.new(0,0,0,32)
+shopSubtitle.TextWrapped = true
+shopSubtitle.Parent = shopTitleFrame
 
 local shopCoins = Instance.new("TextLabel")
 shopCoins.Text = "Coins: 0"
@@ -525,7 +558,7 @@ shopCoins.TextSize = 20
 shopCoins.TextColor3 = THEME.AccentGreen
 shopCoins.BackgroundTransparency = 1
 shopCoins.Size = UDim2.new(1,0,0,20)
-shopCoins.Position = UDim2.new(0,0,0,32)
+shopCoins.Position = UDim2.new(0,0,0,54)
 shopCoins.Parent = shopTitleFrame
 
 -- Shop Tabs Logic (using buttons in sidebar)
@@ -548,7 +581,7 @@ local function switchShopTab(name)
 end
 
 -- Shop Content (Right)
-local shopContent = createGlassPanel(shopFrame, UDim2.new(0.75, 0, 1, 0), UDim2.new(0.25, 10, 0, 0))
+local shopContent = createGlassPanel(shopFrame, UDim2.new(0.75, 0, 1, 0), UDim2.new(0.25, 12, 0, 0))
 local shopContentPad = Instance.new("UIPadding")
 shopContentPad.PaddingTop = UDim.new(0, 20)
 shopContentPad.PaddingBottom = UDim.new(0, 20)
@@ -573,7 +606,15 @@ local sellView = Instance.new("ScrollingFrame")
 sellView.BackgroundTransparency = 1
 sellView.Size = UDim2.new(1, -12, 1, -60) -- Leave space for Sell button at bottom, and scrollbar
 sellView.ScrollBarThickness = 4
+sellView.AutomaticCanvasSize = Enum.AutomaticSize.Y
 sellView.Parent = sellPageFrame
+
+local sellViewPad = Instance.new("UIPadding")
+sellViewPad.PaddingTop = UDim.new(0, 8)
+sellViewPad.PaddingBottom = UDim.new(0, 8)
+sellViewPad.PaddingLeft = UDim.new(0, 6)
+sellViewPad.PaddingRight = UDim.new(0, 6)
+sellViewPad.Parent = sellView
 
 local pickView = Instance.new("ScrollingFrame")
 pickView.BackgroundTransparency = 1
@@ -604,10 +645,11 @@ for _, oreName in ipairs(oreNames) do
 	local cfg = OreConfig[oreName]
 	local row = Instance.new("Frame")
 	row.BackgroundColor3 = THEME.Glass
-	row.BackgroundTransparency = 0.4
-	row.Size = UDim2.new(1, 0, 0, 60) -- Slightly taller
-	row.Parent = sellView
-	createCorner(row, 8)
+        row.BackgroundTransparency = 0.35
+        row.Size = UDim2.new(1, 0, 0, 64) -- Slightly taller
+        row.Parent = sellView
+        createCorner(row, 8)
+        createStroke(row, THEME.BorderDefault, 1, 0.7)
 
 	-- ADDED ORE IMAGE
 	local img = Instance.new("ImageLabel")
@@ -620,22 +662,22 @@ for _, oreName in ipairs(oreNames) do
 	local lbl = Instance.new("TextLabel")
 	lbl.Text = cfg.DisplayName or oreName
 	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 18
-	lbl.TextColor3 = THEME.TextMain
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Size = UDim2.new(0.4, 0, 1, 0)
+        lbl.TextSize = 19
+        lbl.TextColor3 = THEME.TextMain
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Size = UDim2.new(0.4, 0, 1, 0)
 	lbl.Position = UDim2.new(0, 65, 0, 0) -- Shifted right
 	lbl.BackgroundTransparency = 1
 	lbl.Parent = row
 
 	local val = Instance.new("TextLabel")
-	val.Text = "Value: " .. (cfg.Value or 0)
-	val.Font = Enum.Font.Gotham
-	val.TextSize = 18
-	val.TextColor3 = THEME.AccentGreen
-	val.TextXAlignment = Enum.TextXAlignment.Right
-	val.Size = UDim2.new(0.4, 0, 1, 0) -- Reduced width to pull away from edge
-	val.Position = UDim2.new(0.55, 0, 0, 0) -- Shifted left
+        val.Text = "Value: " .. (cfg.Value or 0)
+        val.Font = Enum.Font.GothamSemibold
+        val.TextSize = 18
+        val.TextColor3 = THEME.AccentGreen
+        val.TextXAlignment = Enum.TextXAlignment.Right
+        val.Size = UDim2.new(0.4, 0, 1, 0) -- Reduced width to pull away from edge
+        val.Position = UDim2.new(0.55, 0, 0, 0) -- Shifted left
 	val.BackgroundTransparency = 1
 	val.Parent = row
 end
@@ -880,13 +922,21 @@ end)
 
 -- Toggle Shop Logic
 local function toggleShop(forceOpen)
-	if forceOpen ~= nil then isShopOpen = forceOpen else isShopOpen = not isShopOpen end
+        if forceOpen ~= nil then isShopOpen = forceOpen else isShopOpen = not isShopOpen end
 
-	if isShopOpen then
-		tween(shopFrame, {Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-	else
-		tween(shopFrame, {Position = UDim2.new(0.5, 0, 1.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-	end
+        if isShopOpen then
+                shopOverlay.Visible = true
+                shopOverlay.Active = true
+                tween(shopFrame, {Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        else
+                tween(shopFrame, {Position = UDim2.new(0.5, 0, 1.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+                task.delay(0.5, function()
+                        if not isShopOpen then
+                                shopOverlay.Visible = false
+                                shopOverlay.Active = false
+                        end
+                end)
+        end
 end
 shopCloseBtn.MouseButton1Click:Connect(function() toggleShop(false) end)
 
@@ -981,11 +1031,11 @@ task.spawn(function()
 			local hrp = char and char:FindFirstChild("HumanoidRootPart")
 			if hrp then
 				local dist = (hrp.Position - ShopCenter.Position).Magnitude
-				if dist <= SELL_RADIUS and not isShopOpen then
-					toggleShop(true)
-				elseif dist > SELL_RADIUS and isShopOpen and not hasSellPass then
-					toggleShop(false)
-				end
+                                if dist <= SELL_RADIUS and not isShopOpen then
+                                        toggleShop(true)
+                                elseif dist > SHOP_HIDE_RADIUS and isShopOpen then
+                                        toggleShop(false)
+                                end
 			end
 		end
 	end
