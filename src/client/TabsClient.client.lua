@@ -93,13 +93,22 @@ local function tween(obj, props, time, style, dir)
 end
 
 local function startRGBSpin(grad, speed)
-	local r = 0
-	RunService.RenderStepped:Connect(function(dt)
-		if grad.Parent then
-			r = (r + dt * (speed or 45)) % 360
+        local r = 0
+        RunService.RenderStepped:Connect(function(dt)
+                if grad.Parent then
+                        r = (r + dt * (speed or 45)) % 360
 			grad.Rotation = r
 		end
-	end)
+        end)
+end
+
+local function cycleRGBColor(frame, speed)
+        local hue = 0
+        RunService.RenderStepped:Connect(function(dt)
+                if not frame.Parent then return end
+                hue = (hue + dt * (speed or 0.2)) % 1
+                frame.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+        end)
 end
 
 -- Used for Text RGB
@@ -424,8 +433,8 @@ qDesc.TextWrapped = true
 qDesc.Parent = questPage
 
 local barBg = Instance.new("Frame")
-barBg.BackgroundColor3 = Color3.fromRGB(0,0,0)
-barBg.BackgroundTransparency = 0.5
+barBg.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+barBg.BackgroundTransparency = 0.35
 barBg.Size = UDim2.new(1,0,0,24)
 barBg.Position = UDim2.new(0,0,0,110)
 barBg.Parent = questPage
@@ -437,11 +446,7 @@ barFill.Size = UDim2.new(0,0,1,0)
 barFill.Parent = barBg
 createCorner(barFill, 10)
 
--- Animated RGB Gradient for Progress Bar
-local barGrad = Instance.new("UIGradient")
-barGrad.Color = THEME.Rainbow
-barGrad.Parent = barFill
-startRGBSpin(barGrad)
+cycleRGBColor(barFill, 0.35)
 
 local qProgressText = Instance.new("TextLabel")
 qProgressText.Text = "0 / 0"
@@ -928,6 +933,7 @@ local function toggleShop(forceOpen)
         if isShopOpen then
                 shopOverlay.Visible = true
                 shopOverlay.Active = true
+                shopOverlay.BackgroundTransparency = 1
                 tween(shopFrame, {Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
         else
                 tween(shopFrame, {Position = UDim2.new(0.5, 0, 1.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
