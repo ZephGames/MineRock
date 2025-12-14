@@ -17,6 +17,7 @@ local HEIGHT_ADJUST_SPEED = 6
 local PLAYER_DETECTION_RANGE = 175
 local PLAYER_LOSE_RANGE = 200
 local ATTACK_DISTANCE = 6
+local TARGET_REFRESH_INTERVAL = 0.4
 
 local function randomHorizontalUnit()
     local theta = math.random() * math.pi * 2
@@ -94,6 +95,7 @@ local function createState(model)
         stuckTimer = 0,
         lastPosition = root.Position,
         target = nil,
+        targetTimer = 0,
     }
 end
 
@@ -139,7 +141,13 @@ local function findPlayerTarget(state)
     return best
 end
 
-local function updateTarget(state)
+local function updateTarget(state, dt)
+    state.targetTimer += dt
+    if state.targetTimer < TARGET_REFRESH_INTERVAL then
+        return state.target
+    end
+
+    state.targetTimer = 0
     local target = state.target
 
     if target then
@@ -212,7 +220,7 @@ local function updateShark(state, dt)
         return false
     end
 
-    local target = updateTarget(state)
+    local target = updateTarget(state, dt)
     if target then
         local toTarget = target.root.Position - state.root.Position
         local planarToTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
