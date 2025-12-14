@@ -38,6 +38,12 @@ local MIN_ROCK_GAP    = 20
 local SCALE_MIN       = 0.7
 local SCALE_MAX       = 2.5
 local SELL_RADIUS     = 15
+local STREAK_WINDOW   = 4
+local STREAK_DAMAGE_STEP = 0.06
+local STREAK_YIELD_STEP = 0.04
+local STREAK_DAMAGE_CAP = 0.6
+local STREAK_YIELD_CAP = 0.5
+local BURST_BASE_CHANCE = 0.25
 
 -- ====== gamepass (placeholder) ======
 local SELL_ANYWHERE_PASS_ID = 1631522468
@@ -150,22 +156,67 @@ end
 local lastHitTimes = {}
 local lastMineRemoteTimes = {}
 local REMOTE_MIN_INTERVAL = 0.05
+local streakState = {}
 
 local function getPickaxeTierValue(player)
-	local v = player:FindFirstChild("PickaxeTier")
-	if v and typeof(v.Value) == "number" then
-		local maxTier = PickaxeConfig.GetTierCount()
+        local v = player:FindFirstChild("PickaxeTier")
+        if v and typeof(v.Value) == "number" then
+                local maxTier = PickaxeConfig.GetTierCount()
 		return math.clamp(v.Value, 1, maxTier)
 	end
 	return 1
 end
 
 local function getPickaxeStats(player)
-	local tierIndex = getPickaxeTierValue(player)
-	local cfg = PickaxeConfig.GetTier(tierIndex) or {}
-	local damage = cfg.Damage or 10
-	local cooldown = cfg.Cooldown or 0.5
-	return damage, cooldown, tierIndex, cfg
+        local tierIndex = getPickaxeTierValue(player)
+        local cfg = PickaxeConfig.GetTier(tierIndex) or {}
+        local damage = cfg.Damage or 10
+        local cooldown = cfg.Cooldown or 0.5
+        local critChance = cfg.CritChance or 0
+        local critMultiplier = cfg.CritMultiplier or 1.5
+        return damage, cooldown, tierIndex, cfg, critChance, critMultiplier
+end
+
+local function updateStreak(player, now)
+        local data = streakState[player]
+        if not data then
+                data = { count = 0, lastHit = 0, damageBonus = 0, yieldBonus = 0 }
+        end
+
+        if now - (data.lastHit or 0) <= STREAK_WINDOW then
+                data.count += 1
+        else
+                data.count = 1
+        end
+
+        data.lastHit = now
+        data.damageBonus = math.min(STREAK_DAMAGE_CAP, (data.count - 1) * STREAK_DAMAGE_STEP)
+        data.yieldBonus = math.min(STREAK_YIELD_CAP, (data.count - 1) * STREAK_YIELD_STEP)
+
+        streakState[player] = data
+
+        player:SetAttribute("MiningStreak", data.count)
+        player:SetAttribute("MiningMomentum", 1 + data.damageBonus)
+
+        return data
+end
+
+local function resetStreak(player)
+        streakState[player] = nil
+        player:SetAttribute("MiningStreak", 0)
+        player:SetAttribute("MiningMomentum", 1)
+end
+
+local function applyCritical(damage, critChance, critMultiplier)
+        if critChance <= 0 then
+                return damage, false
+        end
+
+        if math.random() < critChance then
+                return damage * critMultiplier, true
+        end
+
+        return damage, false
 end
 
 local function handlePickaxeUpgradeRequest(player, targetTierIndex)
@@ -410,10 +461,10 @@ local function findGroundPosition(spawnPoint)
 end
 
 local function spawnOreAtPoint(spawnPoint)
-	local oreType = chooseRandomOreType()
-	local config = OreConfig[oreType]
-	if not config then
-		warn("Missing OreConfig for", oreType)
+        local oreType = chooseRandomOreType()
+        local config = OreConfig[oreType]
+        if not config then
+                warn("Missing OreConfig for", oreType)
 		return nil
 	end
 
@@ -478,14 +529,59 @@ local function spawnOreAtPoint(spawnPoint)
 	updateRockScale(rock)
 	updateOreLabel(rock)
 
-	return rock
+        return rock
+end
+
+local function rollBurstChance(streakCount)
+        return math.min(0.85, BURST_BASE_CHANCE + math.max(0, streakCount - 1) * 0.02)
+end
+
+local function calculateDropAmount(config, sizeMult, streak, isCrit)
+        local baseYield = (config and config.Yield) or 1
+        local rawDrop = baseYield * sizeMult
+
+        local streakBonus = rawDrop * ((streak and streak.yieldBonus) or 0)
+        local critBonus = isCrit and (rawDrop * 0.25) or 0
+
+        local burst = 0
+        local burstRange = config and config.BurstYield
+        if burstRange and math.random() < rollBurstChance((streak and streak.count) or 1) then
+                local minExtra = burstRange[1] or burstRange.min or 1
+                local maxExtra = burstRange[2] or burstRange.max or minExtra
+                burst = math.random(minExtra, maxExtra)
+        end
+
+        local total = math.max(1, math.floor(rawDrop + streakBonus + critBonus + burst + 0.5))
+        return total, burst > 0
+end
+
+local function awardTreasure(player, oreType, config, streakCount)
+        local treasureChance = (config and config.TreasureChance) or 0
+        treasureChance += math.min(0.12, math.max(0, streakCount - 1) * 0.008)
+
+        if math.random() < treasureChance then
+                local coins = getOrCreateCoins(player)
+                local coinReward = math.floor(((config and config.Value) or 1) * math.random(3, 8))
+                coins.Value += coinReward
+                UpdateQuestSafe(player, "EarnCoins", coinReward)
+
+                local shards = 0
+                if math.random() < 0.5 then
+                        shards = 1 + math.floor(math.max(0, streakCount - 1) / 5)
+                        addOreToInventory(player, "GemShards", shards)
+                end
+
+                return coinReward, shards
+        end
+
+        return 0, 0
 end
 
 -- ====== mining ======
 
 local function onMineRock(player, hitInstance)
-	if typeof(hitInstance) ~= "Instance" then
-		return
+        if typeof(hitInstance) ~= "Instance" then
+                return
 	end
 
 	local now = os.clock()
@@ -524,65 +620,75 @@ local function onMineRock(player, hitInstance)
 		return
 	end
 
-	local damage, cooldown = getPickaxeStats(player)
-	local last = lastHitTimes[player]
-	if last and (now - last) < cooldown then
-		return
-	end
-	lastHitTimes[player] = now
+        local damage, cooldown, _, _, critChance, critMultiplier = getPickaxeStats(player)
+        local streak = updateStreak(player, now)
 
-	local maxHealth = rock:GetAttribute("MaxHealth")
-	local health = rock:GetAttribute("Health")
-	if not maxHealth or not health then return end
+        local cooldownScale = math.max(0.45, 1 - streak.damageBonus * 0.5)
+        local last = lastHitTimes[player]
+        if last and (now - last) < cooldown * cooldownScale then
+                return
+        end
+        lastHitTimes[player] = now
 
-        health -= damage
+        local maxHealth = rock:GetAttribute("MaxHealth")
+        local health = rock:GetAttribute("Health")
+        if not maxHealth or not health then return end
+
+        local scaledDamage = damage * (1 + streak.damageBonus)
+        local finalDamage, isCrit = applyCritical(scaledDamage, critChance, critMultiplier)
+
+        health -= finalDamage
         rock:SetAttribute("Health", health)
 
         local hitCount = (rock:GetAttribute("HitCount") or 0) + 1
         rock:SetAttribute("HitCount", hitCount)
 
-        if health > 0 and hitCount % 3 == 0 then
-                updateRockScale(rock)
+        if health > 0 then
+                if hitCount % 2 == 0 then
+                        updateRockScale(rock)
+                end
+                updateOreLabel(rock)
+                return
         end
-        updateOreLabel(rock)
 
-	if health <= 0 then
-		rock:SetAttribute("Health", 0)
-		rock:SetAttribute("Depleted", true)
+        rock:SetAttribute("Health", 0)
+        rock:SetAttribute("Depleted", true)
 
-		local oreType = rock:GetAttribute("OreType") or "Stone"
-		local config = OreConfig[oreType]
-		local respawnTime = (config and config.RespawnTime) or 10
+        local oreType = rock:GetAttribute("OreType") or "Stone"
+        local config = OreConfig[oreType]
+        local respawnTime = (config and config.RespawnTime) or 10
 
-		local sizeMult = rock:GetAttribute("SizeMultiplier") or 1
-		local baseYield = (config and config.Yield) or 1
+        local sizeMult = rock:GetAttribute("SizeMultiplier") or 1
 
-		local rawDrop = baseYield * sizeMult
-		local dropAmount = math.max(1, math.floor(rawDrop + 0.5))
+        local dropAmount = calculateDropAmount(config, sizeMult, streak, isCrit)
 
-		addOreToInventory(player, oreType, dropAmount)
+        addOreToInventory(player, oreType, dropAmount)
 
-		addTotalMined(player, 1)
-		UpdateQuestSafe(player, "MineCount", 1)
-		UpdateQuestSafe(player, "MineSpecific", 1, oreType)
+        addTotalMined(player, 1)
+        UpdateQuestSafe(player, "MineCount", 1)
+        UpdateQuestSafe(player, "MineSpecific", 1, oreType)
 
-		local spValue = rock:FindFirstChild("SpawnPoint")
-		local spawnPoint = spValue and spValue.Value
+        local _, shards = awardTreasure(player, oreType, config, streak.count)
+        if shards > 0 then
+                player:SetAttribute("RecentShardGain", shards)
+        end
 
-		-- play break FX before destroy
-		local rarity = rock:GetAttribute("Rarity") or ((config and config.Rarity) or "Common")
-		RarityFX.PlayBreak(rock, rarity)
+        local spValue = rock:FindFirstChild("SpawnPoint")
+        local spawnPoint = spValue and spValue.Value
 
-		rock:Destroy()
+        -- play break FX before destroy
+        local rarity = rock:GetAttribute("Rarity") or ((config and config.Rarity) or "Common")
+        RarityFX.PlayBreak(rock, rarity)
 
-		if spawnPoint then
-			task.delay(respawnTime, function()
-				if spawnPoint.Parent then
-					spawnOreAtPoint(spawnPoint)
-				end
-			end)
-		end
-	end
+        rock:Destroy()
+
+        if spawnPoint then
+                task.delay(respawnTime, function()
+                        if spawnPoint.Parent then
+                                spawnOreAtPoint(spawnPoint)
+                        end
+                end)
+        end
 end
 
 MineRockEvent.OnServerEvent:Connect(onMineRock)
@@ -590,19 +696,24 @@ MineRockEvent.OnServerEvent:Connect(onMineRock)
 -- ====== player setup ======
 
 Players.PlayerAdded:Connect(function(player)
-	getOrCreateCoins(player)
+        getOrCreateCoins(player)
 
-	local tierValue = Instance.new("IntValue")
-	tierValue.Name = "PickaxeTier"
-	tierValue.Value = 1
-	tierValue.Parent = player
+        player:SetAttribute("MiningStreak", 0)
+        player:SetAttribute("MiningMomentum", 1)
+        player:SetAttribute("RecentShardGain", 0)
 
-	getOrCreateInventory(player)
+        local tierValue = Instance.new("IntValue")
+        tierValue.Name = "PickaxeTier"
+        tierValue.Value = 1
+        tierValue.Parent = player
+
+        getOrCreateInventory(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-	lastHitTimes[player] = nil
-	lastMineRemoteTimes[player] = nil
+        lastHitTimes[player] = nil
+        lastMineRemoteTimes[player] = nil
+        resetStreak(player)
 end)
 
 -- ====== initial rock spawn ======
