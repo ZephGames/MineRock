@@ -1,0 +1,25 @@
+{
+  "name": "MineRock",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "RojoShared": {
+        "$path": "src/shared"
+      },
+      "Remotes": {
+        "$path": "src/remotes"
+      }
+    },
+
+    "ServerScriptService": {
+      "$path": "src/server"
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "$path": "src/client"
+      }
+    }
+  }
+}
