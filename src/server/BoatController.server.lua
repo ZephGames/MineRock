@@ -6,13 +6,15 @@ local RunService = game:GetService("RunService")
 
 local BOAT_TAG = "DriveableBoat"
 local MAX_SPEED = 80
-local TURN_RATE = math.rad(70)
+local TURN_RATE = math.rad(120)
 local MAX_FORCE = Vector3.new(2e6, 0, 2e6)
 -- Apply torque on all axes so the boat resists tipping over while still rotating on Y for steering.
 local MAX_TORQUE = Vector3.new(1e7, 1e7, 1e7)
 local ANGULAR_DAMPING_TORQUE = Vector3.new(5e6, 0, 5e6)
 local BUOYANCY_FACTOR = 1
 local BUOYANCY_DAMPING = 10
+local HEIGHT_SPRING = 6
+local MAX_BUOYANCY_MULTIPLIER = 1.25
 
 local function findSeat(model)
     for _, descendant in ipairs(model:GetDescendants()) do
@@ -63,6 +65,8 @@ local function setupBoat(model)
         return
     end
 
+    local targetHeight = root.Position.Y
+
     root.Anchored = false
 
     local bodyVelocity = createMover(root, "BodyVelocity", "BoatBodyVelocity", {
@@ -93,6 +97,7 @@ local function setupBoat(model)
         RelativeTo = Enum.ActuatorRelativeTo.World,
         Attachment0 = rootAttachment,
     })
+    buoyancy.ApplyAtCenterOfMass = true
 
     local driveConnection
     local occupantConnection
@@ -113,15 +118,21 @@ local function setupBoat(model)
     local function updateBuoyancy()
         local verticalVelocity = root.AssemblyLinearVelocity.Y
         local gravityForce = workspace.Gravity * root.AssemblyMass * BUOYANCY_FACTOR
+        local displacement = targetHeight - root.Position.Y
+        local springForce = displacement * root.AssemblyMass * HEIGHT_SPRING
         local dampingForce = -verticalVelocity * root.AssemblyMass * BUOYANCY_DAMPING
+        local totalForce = gravityForce + springForce + dampingForce
 
-        buoyancy.Force = Vector3.new(0, gravityForce + dampingForce, 0)
+        local maxForce = gravityForce * MAX_BUOYANCY_MULTIPLIER
+        buoyancy.Force = Vector3.new(0, math.clamp(totalForce, 0, maxForce), 0)
     end
 
     local function startDriving()
         if driveConnection then
             driveConnection:Disconnect()
         end
+
+        local currentHeading = select(2, root.CFrame:ToEulerAnglesYXZ())
 
         driveConnection = RunService.Heartbeat:Connect(function(dt)
             if not seat.Parent or not root.Parent then
@@ -144,15 +155,14 @@ local function setupBoat(model)
             -- the boat skyward if it ever gains upward momentum.
             bodyVelocity.Velocity = Vector3.new(targetVelocity.X, 0, targetVelocity.Z)
 
-            local _, yaw, _ = root.CFrame:ToEulerAnglesYXZ()
-            local newYaw = yaw + steer * TURN_RATE * dt
+            currentHeading += steer * TURN_RATE * dt
 
             -- Keep the boat upright by forcing zero roll/pitch while allowing yaw steering.
-            bodyGyro.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, newYaw, 0)
+            bodyGyro.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, currentHeading, 0)
 
             -- Kill roll and pitch angular velocity so the hull settles upright instead of capsizing.
             local angularVelocity = root.AssemblyAngularVelocity
-            angularDamping.AngularVelocity = Vector3.new(0, angularVelocity.Y, 0)
+            angularDamping.AngularVelocity = Vector3.new(-angularVelocity.X, 0, -angularVelocity.Z)
         end)
     end
 
