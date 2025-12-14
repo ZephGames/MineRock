@@ -9,7 +9,8 @@ local MAX_SPEED = 80
 local TURN_RATE = math.rad(70)
 local MAX_FORCE = Vector3.new(2e6, 0, 2e6)
 -- Apply torque on all axes so the boat resists tipping over while still rotating on Y for steering.
-local MAX_TORQUE = Vector3.new(5e6, 5e6, 5e6)
+local MAX_TORQUE = Vector3.new(1e7, 1e7, 1e7)
+local ANGULAR_DAMPING_TORQUE = Vector3.new(5e6, 0, 5e6)
 
 local function findSeat(model)
 for _, descendant in ipairs(model:GetDescendants()) do
@@ -68,12 +69,18 @@ P = 2e4,
 Velocity = Vector3.new(),
 })
 
-local bodyGyro = createMover(root, "BodyGyro", "BoatBodyGyro", {
-    MaxTorque = MAX_TORQUE,
-    P = 2e5,
-    D = 1e3,
-    CFrame = root.CFrame,
-})
+    local bodyGyro = createMover(root, "BodyGyro", "BoatBodyGyro", {
+        MaxTorque = MAX_TORQUE,
+        P = 3e5,
+        D = 2e3,
+        CFrame = root.CFrame,
+    })
+
+    local angularDamping = createMover(root, "BodyAngularVelocity", "BoatAngularDamping", {
+        MaxTorque = ANGULAR_DAMPING_TORQUE,
+        P = 2e4,
+        AngularVelocity = Vector3.new(),
+    })
 
 local driveConnection
 local occupantConnection
@@ -82,11 +89,12 @@ local ancestryConnection
 local function stopDriving()
 if driveConnection then
 driveConnection:Disconnect()
-driveConnection = nil
-end
+        driveConnection = nil
+    end
 
-bodyVelocity.Velocity = Vector3.new()
-bodyGyro.CFrame = root.CFrame
+    bodyVelocity.Velocity = Vector3.new()
+    bodyGyro.CFrame = root.CFrame
+    angularDamping.AngularVelocity = Vector3.new()
 end
 
 local function startDriving()
@@ -103,22 +111,26 @@ end
 local throttle = math.clamp(seat.Throttle, -1, 1)
 local steer = math.clamp(seat.Steer, -1, 1)
 
-local forward = root.CFrame.LookVector
-local planarForward = Vector3.new(forward.X, 0, forward.Z)
-if planarForward.Magnitude > 0 then
-planarForward = planarForward.Unit
-end
+        local forward = root.CFrame.LookVector
+        local planarForward = Vector3.new(forward.X, 0, forward.Z)
+        if planarForward.Magnitude > 0 then
+            planarForward = planarForward.Unit
+        end
 
-local targetVelocity = planarForward * (throttle * MAX_SPEED)
-local currentY = root.AssemblyLinearVelocity.Y
+        local targetVelocity = planarForward * (throttle * MAX_SPEED)
+        local currentY = root.AssemblyLinearVelocity.Y
 
-bodyVelocity.Velocity = Vector3.new(targetVelocity.X, currentY, targetVelocity.Z)
+        bodyVelocity.Velocity = Vector3.new(targetVelocity.X, currentY, targetVelocity.Z)
 
         local _, yaw, _ = root.CFrame:ToEulerAnglesYXZ()
         local newYaw = yaw + steer * TURN_RATE * dt
 
         -- Keep the boat upright by forcing zero roll/pitch while allowing yaw steering.
         bodyGyro.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, newYaw, 0)
+
+        -- Kill roll and pitch angular velocity so the hull settles upright instead of capsizing.
+        local angularVelocity = root.AssemblyAngularVelocity
+        angularDamping.AngularVelocity = Vector3.new(0, angularVelocity.Y, 0)
     end)
 end
 
