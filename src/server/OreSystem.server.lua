@@ -531,18 +531,12 @@ local function onMineRock(player, hitInstance)
 	end
 	lastHitTimes[player] = now
 
-        local oreType = rock:GetAttribute("OreType") or "Stone"
-        local config = OreConfig[oreType]
-        local rarity = rock:GetAttribute("Rarity") or ((config and config.Rarity) or "Common")
-
-        local maxHealth = rock:GetAttribute("MaxHealth")
-        local health = rock:GetAttribute("Health")
-        if not maxHealth or not health then return end
+	local maxHealth = rock:GetAttribute("MaxHealth")
+	local health = rock:GetAttribute("Health")
+	if not maxHealth or not health then return end
 
         health -= damage
         rock:SetAttribute("Health", health)
-
-        RarityFX.PlayHit(rock, rarity)
 
         local hitCount = (rock:GetAttribute("HitCount") or 0) + 1
         rock:SetAttribute("HitCount", hitCount)
@@ -556,7 +550,9 @@ local function onMineRock(player, hitInstance)
 		rock:SetAttribute("Health", 0)
 		rock:SetAttribute("Depleted", true)
 
-                local respawnTime = (config and config.RespawnTime) or 10
+		local oreType = rock:GetAttribute("OreType") or "Stone"
+		local config = OreConfig[oreType]
+		local respawnTime = (config and config.RespawnTime) or 10
 
 		local sizeMult = rock:GetAttribute("SizeMultiplier") or 1
 		local baseYield = (config and config.Yield) or 1
