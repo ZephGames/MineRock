@@ -2,6 +2,7 @@
 -- Makes tagged shark models swim along the water surface with obstacle avoidance.
 
 local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local SHARK_TAG = "Shark"
@@ -13,6 +14,9 @@ local SIDE_CHECK_ANGLE = math.rad(35)
 local STUCK_CHECK_INTERVAL = 4
 local MIN_MOVEMENT_SQ = 4 -- 2 studs of movement squared
 local HEIGHT_ADJUST_SPEED = 6
+local PLAYER_DETECTION_RANGE = 175
+local PLAYER_LOSE_RANGE = 200
+local ATTACK_DISTANCE = 6
 
 local function randomHorizontalUnit()
     local theta = math.random() * math.pi * 2
@@ -89,7 +93,74 @@ local function createState(model)
         driftTimer = 0,
         stuckTimer = 0,
         lastPosition = root.Position,
+        target = nil,
     }
+end
+
+local function isSwimming(humanoid)
+    if not humanoid then
+        return false
+    end
+
+    local state = humanoid:GetState()
+    return state == Enum.HumanoidStateType.Swimming
+end
+
+local function findPlayerTarget(state)
+    local best
+    local bestDistSq = PLAYER_DETECTION_RANGE * PLAYER_DETECTION_RANGE
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        local character = player.Character
+        if not character then
+            continue
+        end
+
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not root or humanoid.Health <= 0 then
+            continue
+        end
+
+        if not isSwimming(humanoid) then
+            continue
+        end
+
+        local distSq = (root.Position - state.root.Position).MagnitudeSquared
+        if distSq <= bestDistSq then
+            bestDistSq = distSq
+            best = {
+                humanoid = humanoid,
+                root = root,
+            }
+        end
+    end
+
+    return best
+end
+
+local function updateTarget(state)
+    local target = state.target
+
+    if target then
+        local humanoid = target.humanoid
+        local root = target.root
+        local valid = humanoid
+            and root
+            and humanoid.Health > 0
+            and root.Parent
+            and isSwimming(humanoid)
+
+        if valid then
+            local distSq = (root.Position - state.root.Position).MagnitudeSquared
+            if distSq <= PLAYER_LOSE_RANGE * PLAYER_LOSE_RANGE then
+                return target
+            end
+        end
+    end
+
+    state.target = findPlayerTarget(state)
+    return state.target
 end
 
 local function adjustDirectionFromHit(state, hitResult)
@@ -141,10 +212,22 @@ local function updateShark(state, dt)
         return false
     end
 
+    local target = updateTarget(state)
+    if target then
+        local toTarget = target.root.Position - state.root.Position
+        local planarToTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
+
+        if planarToTarget.Magnitude > 0.1 then
+            state.direction = planarToTarget.Unit
+        end
+
+        state.driftTimer = 0
+    end
+
     checkObstacles(state)
 
     state.driftTimer += dt
-    if state.driftTimer >= DRIFT_INTERVAL then
+    if not target and state.driftTimer >= DRIFT_INTERVAL then
         local driftAngle = math.random(-10, 10)
         state.direction = rotateY(state.direction, math.rad(driftAngle)).Unit
         state.driftTimer = 0
@@ -176,6 +259,14 @@ local function updateShark(state, dt)
 
     local lookPoint = rootPosition + planarDir
     state.bodyGyro.CFrame = CFrame.new(rootPosition, lookPoint)
+
+    if target then
+        local distSq = (target.root.Position - rootPosition).MagnitudeSquared
+        if distSq <= ATTACK_DISTANCE * ATTACK_DISTANCE then
+            target.humanoid.Health = 0
+            state.target = nil
+        end
+    end
 
     return true
 end
