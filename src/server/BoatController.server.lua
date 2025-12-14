@@ -17,6 +17,7 @@ local BUOYANCY_FACTOR = 1
 local BUOYANCY_DAMPING = 20
 local HEIGHT_SPRING = 4
 local MAX_BUOYANCY_MULTIPLIER = 1.25
+local WATER_RAY_HEIGHT = 200
 
 local function findSeat(model)
     for _, descendant in ipairs(model:GetDescendants()) do
@@ -55,6 +56,16 @@ local function createMover(instance, className, name, props)
     return mover
 end
 
+local function findWaterHeight(root, rayParams)
+    local rayOrigin = root.Position + Vector3.new(0, WATER_RAY_HEIGHT * 0.5, 0)
+    local rayDirection = Vector3.new(0, -WATER_RAY_HEIGHT, 0)
+
+    local result = workspace:Raycast(rayOrigin, rayDirection, rayParams)
+    if result and result.Material == Enum.Material.Water then
+        return result.Position.Y
+    end
+end
+
 local function setupBoat(model)
     if model:GetAttribute("BoatControllerSetup") then
         return
@@ -66,6 +77,11 @@ local function setupBoat(model)
     if not seat or not root then
         return
     end
+
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = { model }
+    raycastParams.IgnoreWater = false
 
     local targetHeight = root.Position.Y
 
@@ -106,6 +122,8 @@ local function setupBoat(model)
     local ancestryConnection
     local buoyancyConnection
 
+    local inWater = false
+
     local function stopDriving()
         if driveConnection then
             driveConnection:Disconnect()
@@ -118,6 +136,16 @@ local function setupBoat(model)
     end
 
     local function updateBuoyancy()
+        local waterHeight = findWaterHeight(root, raycastParams)
+        if not waterHeight then
+            buoyancy.Force = Vector3.new()
+            inWater = false
+            return
+        end
+
+        inWater = true
+        targetHeight = waterHeight + (root.Size.Y * 0.5)
+
         local verticalVelocity = root.AssemblyLinearVelocity.Y
         local gravityForce = workspace.Gravity * root.AssemblyMass * BUOYANCY_FACTOR
         local displacement = targetHeight - root.Position.Y
@@ -166,6 +194,13 @@ local function setupBoat(model)
             local accelerationRate = targetSpeed == 0 and DECELERATION or ACCELERATION
             local deltaSpeed = accelerationRate * dt
             currentSpeed = approach(currentSpeed, targetSpeed, deltaSpeed)
+
+            if not inWater then
+                currentSpeed = approach(currentSpeed, 0, DECELERATION * dt)
+                bodyVelocity.Velocity = Vector3.new()
+                angularDamping.AngularVelocity = Vector3.new()
+                return
+            end
 
             local targetVelocity = planarForward * currentSpeed
 
