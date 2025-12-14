@@ -487,7 +487,8 @@ local shopOverlay = Instance.new("Frame")
 shopOverlay.Name = "ShopOverlay"
 shopOverlay.Size = UDim2.fromScale(1, 1)
 shopOverlay.BackgroundColor3 = Color3.fromRGB(6, 8, 12)
-shopOverlay.BackgroundTransparency = 0.45
+-- Remove dimming effect while keeping overlay for input capture
+shopOverlay.BackgroundTransparency = 1
 shopOverlay.Visible = false
 shopOverlay.ZIndex = 5
 shopOverlay.Parent = gui
