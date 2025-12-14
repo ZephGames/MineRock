@@ -6,14 +6,16 @@ local RunService = game:GetService("RunService")
 
 local BOAT_TAG = "DriveableBoat"
 local MAX_SPEED = 80
+local ACCELERATION = 45
+local DECELERATION = 70
 local TURN_RATE = math.rad(120)
 local MAX_FORCE = Vector3.new(2e6, 0, 2e6)
 -- Apply torque on all axes so the boat resists tipping over while still rotating on Y for steering.
 local MAX_TORQUE = Vector3.new(1e7, 1e7, 1e7)
 local ANGULAR_DAMPING_TORQUE = Vector3.new(5e6, 0, 5e6)
 local BUOYANCY_FACTOR = 1
-local BUOYANCY_DAMPING = 10
-local HEIGHT_SPRING = 6
+local BUOYANCY_DAMPING = 20
+local HEIGHT_SPRING = 4
 local MAX_BUOYANCY_MULTIPLIER = 1.25
 
 local function findSeat(model)
@@ -133,6 +135,17 @@ local function setupBoat(model)
         end
 
         local currentHeading = select(2, root.CFrame:ToEulerAnglesYXZ())
+        local currentSpeed = 0
+
+        local function approach(current, target, rate)
+            if current < target then
+                return math.min(target, current + rate)
+            elseif current > target then
+                return math.max(target, current - rate)
+            end
+
+            return target
+        end
 
         driveConnection = RunService.Heartbeat:Connect(function(dt)
             if not seat.Parent or not root.Parent then
@@ -141,7 +154,7 @@ local function setupBoat(model)
             end
 
             local throttle = math.clamp(seat.Throttle, -1, 1)
-            local steer = math.clamp(seat.Steer, -1, 1)
+            local steer = -math.clamp(seat.Steer, -1, 1)
 
             local forward = root.CFrame.LookVector
             local planarForward = Vector3.new(forward.X, 0, forward.Z)
@@ -149,7 +162,12 @@ local function setupBoat(model)
                 planarForward = planarForward.Unit
             end
 
-            local targetVelocity = planarForward * (throttle * MAX_SPEED)
+            local targetSpeed = throttle * MAX_SPEED
+            local accelerationRate = targetSpeed == 0 and DECELERATION or ACCELERATION
+            local deltaSpeed = accelerationRate * dt
+            currentSpeed = approach(currentSpeed, targetSpeed, deltaSpeed)
+
+            local targetVelocity = planarForward * currentSpeed
 
             -- Drive purely in the X/Z plane. Preserving Y velocity lets buoyancy run away and yeet
             -- the boat skyward if it ever gains upward momentum.
