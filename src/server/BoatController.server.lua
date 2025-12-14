@@ -8,7 +8,8 @@ local BOAT_TAG = "DriveableBoat"
 local MAX_SPEED = 80
 local TURN_RATE = math.rad(70)
 local MAX_FORCE = Vector3.new(2e6, 0, 2e6)
-local MAX_TORQUE = Vector3.new(0, 5e6, 0)
+-- Apply torque on all axes so the boat resists tipping over while still rotating on Y for steering.
+local MAX_TORQUE = Vector3.new(5e6, 5e6, 5e6)
 
 local function findSeat(model)
 for _, descendant in ipairs(model:GetDescendants()) do
@@ -68,9 +69,10 @@ Velocity = Vector3.new(),
 })
 
 local bodyGyro = createMover(root, "BodyGyro", "BoatBodyGyro", {
-MaxTorque = MAX_TORQUE,
-P = 2e5,
-CFrame = root.CFrame,
+    MaxTorque = MAX_TORQUE,
+    P = 2e5,
+    D = 1e3,
+    CFrame = root.CFrame,
 })
 
 local driveConnection
@@ -112,10 +114,12 @@ local currentY = root.AssemblyLinearVelocity.Y
 
 bodyVelocity.Velocity = Vector3.new(targetVelocity.X, currentY, targetVelocity.Z)
 
-local _, yaw, _ = root.CFrame:ToEulerAnglesYXZ()
-local newYaw = yaw + steer * TURN_RATE * dt
-bodyGyro.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, newYaw, 0)
-end)
+        local _, yaw, _ = root.CFrame:ToEulerAnglesYXZ()
+        local newYaw = yaw + steer * TURN_RATE * dt
+
+        -- Keep the boat upright by forcing zero roll/pitch while allowing yaw steering.
+        bodyGyro.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, newYaw, 0)
+    end)
 end
 
 occupantConnection = seat:GetPropertyChangedSignal("Occupant"):Connect(function()
