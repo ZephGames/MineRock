@@ -90,12 +90,14 @@ local function createState(model)
         bodyGyro = bodyGyro,
         raycastParams = raycastParams,
         direction = randomHorizontalUnit(),
+        surfaceHeight = model:GetAttribute("WaterHeight") or root.Position.Y,
         targetHeight = model:GetAttribute("WaterHeight") or root.Position.Y,
         driftTimer = 0,
         stuckTimer = 0,
         lastPosition = root.Position,
         target = nil,
         targetTimer = 0,
+        lastPlanarDir = nil,
     }
 end
 
@@ -217,6 +219,15 @@ local function checkObstacles(state)
     end
 end
 
+local function updateTargetHeight(state, target)
+    if target then
+        local desiredHeight = target.root.Position.Y
+        state.targetHeight = math.min(state.surfaceHeight, desiredHeight)
+    else
+        state.targetHeight = state.surfaceHeight
+    end
+end
+
 local function updateShark(state, dt)
     if not state.root.Parent then
         return false
@@ -227,11 +238,17 @@ local function updateShark(state, dt)
         local toTarget = target.root.Position - state.root.Position
         local planarToTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
 
-        if planarToTarget.Magnitude > 0.1 then
+        if planarToTarget.Magnitude > 1 then
             state.direction = planarToTarget.Unit
+            state.lastPlanarDir = state.direction
+        elseif state.lastPlanarDir then
+            state.direction = state.lastPlanarDir
         end
 
         state.driftTimer = 0
+        updateTargetHeight(state, target)
+    else
+        updateTargetHeight(state, nil)
     end
 
     checkObstacles(state)
@@ -258,9 +275,13 @@ local function updateShark(state, dt)
 
     local planarDir = Vector3.new(state.direction.X, 0, state.direction.Z)
     if planarDir.Magnitude < 0.1 then
-        planarDir = randomHorizontalUnit()
+        planarDir = state.lastPlanarDir or randomHorizontalUnit()
+    else
+        planarDir = planarDir.Unit
+        state.lastPlanarDir = planarDir
     end
-    planarDir = planarDir.Unit
+
+    state.targetHeight = math.min(state.targetHeight, state.surfaceHeight)
 
     local verticalDelta = state.targetHeight - rootPosition.Y
     local verticalSpeed = math.clamp(verticalDelta * HEIGHT_ADJUST_SPEED, -SWIM_SPEED, SWIM_SPEED)
@@ -276,6 +297,7 @@ local function updateShark(state, dt)
         if distSq <= ATTACK_DISTANCE * ATTACK_DISTANCE then
             target.humanoid.Health = 0
             state.target = nil
+            updateTargetHeight(state, nil)
         end
     end
 
