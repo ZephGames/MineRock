@@ -313,6 +313,16 @@ local function updateRockScale(rock)
         if rock.PrimaryPart then
                 rock:ScaleTo(targetScale)
                 rock:SetAttribute("CurrentScale", targetScale)
+	local initialScale = rock:GetAttribute("InitialScale") or 1
+	local maxHealth = rock:GetAttribute("MaxHealth") or 1
+	local health = rock:GetAttribute("Health") or maxHealth
+	if maxHealth <= 0 then return end
+
+	local frac = math.clamp(health / maxHealth, 0.4, 1)
+        local targetScale = initialScale * frac
+
+        if rock.PrimaryPart then
+                rock:ScaleTo(targetScale)
         end
 end
 
@@ -458,6 +468,9 @@ local function spawnOreAtPoint(spawnPoint)
         rock:SetAttribute("SizeMultiplier", sizeMult)
         rock:SetAttribute("InitialScale", sizeMult)
         rock:SetAttribute("CurrentScale", sizeMult)
+	local sizeMult = math.random(math.floor(SCALE_MIN * 100), math.floor(SCALE_MAX * 100)) / 100
+        rock:SetAttribute("SizeMultiplier", sizeMult)
+        rock:SetAttribute("InitialScale", sizeMult)
         rock:ScaleTo(sizeMult)
         rock:SetAttribute("HitsSinceScale", 0)
 
