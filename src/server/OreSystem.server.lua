@@ -36,7 +36,7 @@ local SPAWN_RADIUS    = 100
 local ROCKS_PER_POINT = 20
 local MIN_ROCK_GAP    = 20
 local SCALE_MIN       = 0.7
-local SCALE_MAX       = 3.0
+local SCALE_MAX       = 2.5
 local SELL_RADIUS     = 15
 
 -- ====== gamepass (placeholder) ======
@@ -296,17 +296,24 @@ end)
 -- ====== rock visuals ======
 
 local function updateRockScale(rock)
-	local initialScale = rock:GetAttribute("InitialScale") or 1
-	local maxHealth = rock:GetAttribute("MaxHealth") or 1
-	local health = rock:GetAttribute("Health") or maxHealth
-	if maxHealth <= 0 then return end
+        local initialScale = rock:GetAttribute("InitialScale") or 1
+        local currentScale = rock:GetAttribute("CurrentScale") or initialScale
+        local maxHealth = rock:GetAttribute("MaxHealth") or 1
+        local health = rock:GetAttribute("Health") or maxHealth
+        if maxHealth <= 0 then return end
 
-	local frac = math.clamp(health / maxHealth, 0.4, 1)
-	local targetScale = initialScale * frac
+        local frac = math.clamp(health / maxHealth, 0.4, 1)
+        local healthTarget = initialScale * frac
 
-	if rock.PrimaryPart then
-		rock:ScaleTo(targetScale)
-	end
+        -- Ensure the rock always visually shrinks on each scale update to show progress
+        local minStep = initialScale * 0.03
+        local targetScale = math.min(currentScale - minStep, healthTarget)
+        targetScale = math.max(targetScale, initialScale * 0.4)
+
+        if rock.PrimaryPart then
+                rock:ScaleTo(targetScale)
+                rock:SetAttribute("CurrentScale", targetScale)
+        end
 end
 
 local function updateOreLabel(rock)
@@ -447,10 +454,12 @@ local function spawnOreAtPoint(spawnPoint)
 	rock:SetPrimaryPartCFrame(CFrame.new(pos) * CFrame.Angles(0, yRot, 0))
 
 	-- random size
-	local sizeMult = math.random(math.floor(SCALE_MIN * 100), math.floor(SCALE_MAX * 100)) / 100
-	rock:SetAttribute("SizeMultiplier", sizeMult)
-	rock:SetAttribute("InitialScale", sizeMult)
-	rock:ScaleTo(sizeMult)
+        local sizeMult = math.random(math.floor(SCALE_MIN * 100), math.floor(SCALE_MAX * 100)) / 100
+        rock:SetAttribute("SizeMultiplier", sizeMult)
+        rock:SetAttribute("InitialScale", sizeMult)
+        rock:SetAttribute("CurrentScale", sizeMult)
+        rock:ScaleTo(sizeMult)
+        rock:SetAttribute("HitsSinceScale", 0)
 
 	-- size-based health
 	local baseMaxHealth = config.MaxHealth or 100
@@ -530,15 +539,24 @@ local function onMineRock(player, hitInstance)
 	end
 	lastHitTimes[player] = now
 
-	local maxHealth = rock:GetAttribute("MaxHealth")
-	local health = rock:GetAttribute("Health")
-	if not maxHealth or not health then return end
+        local maxHealth = rock:GetAttribute("MaxHealth")
+        local health = rock:GetAttribute("Health")
+        if not maxHealth or not health then return end
 
-	health -= damage
-	rock:SetAttribute("Health", health)
+        health -= damage
+        rock:SetAttribute("Health", health)
 
-	updateRockScale(rock)
-	updateOreLabel(rock)
+        local hitsSinceScale = rock:GetAttribute("HitsSinceScale") or 0
+        hitsSinceScale += 1
+
+        local shouldUpdateScale = hitsSinceScale >= 3 or health <= 0
+        if shouldUpdateScale then
+                rock:SetAttribute("HitsSinceScale", 0)
+                updateRockScale(rock)
+        else
+                rock:SetAttribute("HitsSinceScale", hitsSinceScale)
+        end
+        updateOreLabel(rock)
 
 	if health <= 0 then
 		rock:SetAttribute("Health", 0)
