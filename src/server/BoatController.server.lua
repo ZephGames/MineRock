@@ -11,7 +11,8 @@ local MAX_FORCE = Vector3.new(2e6, 0, 2e6)
 -- Apply torque on all axes so the boat resists tipping over while still rotating on Y for steering.
 local MAX_TORQUE = Vector3.new(1e7, 1e7, 1e7)
 local ANGULAR_DAMPING_TORQUE = Vector3.new(5e6, 0, 5e6)
-local BUOYANCY_FACTOR = 1.05
+local BUOYANCY_FACTOR = 1
+local BUOYANCY_DAMPING = 10
 
 local function findSeat(model)
     for _, descendant in ipairs(model:GetDescendants()) do
@@ -110,7 +111,11 @@ local function setupBoat(model)
     end
 
     local function updateBuoyancy()
-        buoyancy.Force = Vector3.new(0, workspace.Gravity * root.AssemblyMass * BUOYANCY_FACTOR, 0)
+        local verticalVelocity = root.AssemblyLinearVelocity.Y
+        local gravityForce = workspace.Gravity * root.AssemblyMass * BUOYANCY_FACTOR
+        local dampingForce = -verticalVelocity * root.AssemblyMass * BUOYANCY_DAMPING
+
+        buoyancy.Force = Vector3.new(0, gravityForce + dampingForce, 0)
     end
 
     local function startDriving()
@@ -134,9 +139,10 @@ local function setupBoat(model)
             end
 
             local targetVelocity = planarForward * (throttle * MAX_SPEED)
-            local currentY = root.AssemblyLinearVelocity.Y
 
-            bodyVelocity.Velocity = Vector3.new(targetVelocity.X, currentY, targetVelocity.Z)
+            -- Drive purely in the X/Z plane. Preserving Y velocity lets buoyancy run away and yeet
+            -- the boat skyward if it ever gains upward momentum.
+            bodyVelocity.Velocity = Vector3.new(targetVelocity.X, 0, targetVelocity.Z)
 
             local _, yaw, _ = root.CFrame:ToEulerAnglesYXZ()
             local newYaw = yaw + steer * TURN_RATE * dt
