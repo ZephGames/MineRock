@@ -191,41 +191,6 @@ function PickaxeClient.init(tool)
     return nil
   end
 
-  local function ensureHighlight()
-    if highlightBox then
-      return
-    end
-
-    highlightBox = Instance.new("SelectionBox")
-    highlightBox.LineThickness = 0.06
-    highlightBox.SurfaceTransparency = 0.65
-    highlightBox.Visible = false
-    highlightBox.Parent = tool
-  end
-
-  local function applyHighlight(rock, targetPart)
-    ensureHighlight()
-    highlightedRock = rock
-
-    if rock and rock.PrimaryPart then
-      highlightBox.Adornee = rock.PrimaryPart
-    elseif targetPart and targetPart:IsA("BasePart") then
-      highlightBox.Adornee = targetPart
-    else
-      highlightBox.Adornee = nil
-    end
-
-    if rock then
-      local rarity = rock:GetAttribute("Rarity") or "Common"
-      local color = rarityColors[rarity] or Color3.new(1, 1, 1)
-      highlightBox.Color3 = color
-      highlightBox.SurfaceColor3 = color
-      highlightBox.Visible = true
-    else
-      highlightBox.Visible = false
-    end
-  end
-
   local function clearHighlight()
     highlightedRock = nil
     if highlightBox then
@@ -235,46 +200,11 @@ function PickaxeClient.init(tool)
   end
 
   local function updateHighlight()
-    local hitPart = getRockPartUnderCursor()
-    local rock = getRockModelFromHit(hitPart)
-    if not rock or not isWithinRange(rock, hitPart) then
-      clearHighlight()
-      return
-    end
-
-    if rock ~= highlightedRock then
-      applyHighlight(rock, hitPart)
-    end
+    clearHighlight()
   end
 
   local function showStreakToast()
-    local streakCount = player:GetAttribute("MiningStreak") or 0
-    if streakCount < 3 then
-      return
-    end
-
-    local now = os.clock()
-    if now - lastStreakToast < 2 then
-      return
-    end
-    lastStreakToast = now
-
-    local message
-    if streakCount >= 10 then
-      message = "ON FIRE x" .. streakCount
-    elseif streakCount >= 5 then
-      message = "Hot streak x" .. streakCount
-    else
-      message = "Combo x" .. streakCount
-    end
-
-    pcall(function()
-      game.StarterGui:SetCore("SendNotification", {
-        Title = "Mining Combo!",
-        Text = message,
-        Duration = 2.5,
-      })
-    end)
+    lastStreakToast = os.clock()
   end
 
   local function playSwingAnim()
@@ -380,10 +310,6 @@ function PickaxeClient.init(tool)
       cachedOwnsHold = true
       refreshHoldPass()
     end
-  end))
-
-  table.insert(connections, RunService.RenderStepped:Connect(function()
-    updateHighlight()
   end))
 
   table.insert(connections, player:GetAttributeChangedSignal("MiningStreak"):Connect(function()

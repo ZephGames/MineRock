@@ -39,11 +39,11 @@ local SCALE_MIN       = 0.7
 local SCALE_MAX       = 2.5
 local SELL_RADIUS     = 15
 local STREAK_WINDOW   = 4
-local STREAK_DAMAGE_STEP = 0.06
-local STREAK_YIELD_STEP = 0.04
-local STREAK_DAMAGE_CAP = 0.6
-local STREAK_YIELD_CAP = 0.5
-local BURST_BASE_CHANCE = 0.25
+local STREAK_DAMAGE_STEP = 0.03
+local STREAK_YIELD_STEP = 0.015
+local STREAK_DAMAGE_CAP = 0.35
+local STREAK_YIELD_CAP = 0.25
+local BURST_BASE_CHANCE = 0.18
 
 -- ====== gamepass (placeholder) ======
 local SELL_ANYWHERE_PASS_ID = 1631522468
@@ -541,7 +541,7 @@ local function calculateDropAmount(config, sizeMult, streak, isCrit)
         local rawDrop = baseYield * sizeMult
 
         local streakBonus = rawDrop * ((streak and streak.yieldBonus) or 0)
-        local critBonus = isCrit and (rawDrop * 0.25) or 0
+        local critBonus = isCrit and (rawDrop * 0.15) or 0
 
         local burst = 0
         local burstRange = config and config.BurstYield
@@ -557,17 +557,17 @@ end
 
 local function awardTreasure(player, oreType, config, streakCount)
         local treasureChance = (config and config.TreasureChance) or 0
-        treasureChance += math.min(0.12, math.max(0, streakCount - 1) * 0.008)
+        treasureChance += math.min(0.08, math.max(0, streakCount - 1) * 0.005)
 
         if math.random() < treasureChance then
                 local coins = getOrCreateCoins(player)
-                local coinReward = math.floor(((config and config.Value) or 1) * math.random(3, 8))
+                local coinReward = math.floor(((config and config.Value) or 1) * math.random(2, 5))
                 coins.Value += coinReward
                 UpdateQuestSafe(player, "EarnCoins", coinReward)
 
                 local shards = 0
-                if math.random() < 0.5 then
-                        shards = 1 + math.floor(math.max(0, streakCount - 1) / 5)
+                if math.random() < 0.35 then
+                        shards = 1 + math.floor(math.max(0, streakCount - 1) / 7)
                         addOreToInventory(player, "GemShards", shards)
                 end
 
@@ -623,7 +623,7 @@ local function onMineRock(player, hitInstance)
         local damage, cooldown, _, _, critChance, critMultiplier = getPickaxeStats(player)
         local streak = updateStreak(player, now)
 
-        local cooldownScale = math.max(0.45, 1 - streak.damageBonus * 0.5)
+        local cooldownScale = math.max(0.55, 1 - streak.damageBonus * 0.35)
         local last = lastHitTimes[player]
         if last and (now - last) < cooldown * cooldownScale then
                 return
