@@ -6,10 +6,7 @@
     "ReplicatedStorage": {
       "RojoShared": {
         "$path": "src/shared"
-      },
-      "Remotes": {
-        "$path": "src/remotes"
-      }
+      }   
     },
 
     "ServerScriptService": {
@@ -18,7 +15,11 @@
 
     "StarterPlayer": {
       "StarterPlayerScripts": {
-        "$path": "src/client"
+        "$path": "src/client",
+
+    "StarterCharacterScripts": {
+        "$path": "src/character"
+        }
       }
     }
   }
