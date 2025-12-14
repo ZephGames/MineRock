@@ -36,7 +36,7 @@ local SPAWN_RADIUS    = 100
 local ROCKS_PER_POINT = 20
 local MIN_ROCK_GAP    = 20
 local SCALE_MIN       = 0.7
-local SCALE_MAX       = 3.0
+local SCALE_MAX       = 2.5
 local SELL_RADIUS     = 15
 
 -- ====== gamepass (placeholder) ======
@@ -296,10 +296,10 @@ end)
 -- ====== rock visuals ======
 
 local function updateRockScale(rock)
-	local initialScale = rock:GetAttribute("InitialScale") or 1
-	local maxHealth = rock:GetAttribute("MaxHealth") or 1
-	local health = rock:GetAttribute("Health") or maxHealth
-	if maxHealth <= 0 then return end
+        local initialScale = rock:GetAttribute("InitialScale") or 1
+        local maxHealth = rock:GetAttribute("MaxHealth") or 1
+        local health = rock:GetAttribute("Health") or maxHealth
+        if maxHealth <= 0 then return end
 
 	local frac = math.clamp(health / maxHealth, 0.4, 1)
 	local targetScale = initialScale * frac
@@ -447,10 +447,10 @@ local function spawnOreAtPoint(spawnPoint)
 	rock:SetPrimaryPartCFrame(CFrame.new(pos) * CFrame.Angles(0, yRot, 0))
 
 	-- random size
-	local sizeMult = math.random(math.floor(SCALE_MIN * 100), math.floor(SCALE_MAX * 100)) / 100
-	rock:SetAttribute("SizeMultiplier", sizeMult)
-	rock:SetAttribute("InitialScale", sizeMult)
-	rock:ScaleTo(sizeMult)
+        local sizeMult = math.random(math.floor(SCALE_MIN * 100), math.floor(SCALE_MAX * 100)) / 100
+        rock:SetAttribute("SizeMultiplier", sizeMult)
+        rock:SetAttribute("InitialScale", sizeMult)
+        rock:ScaleTo(sizeMult)
 
 	-- size-based health
 	local baseMaxHealth = config.MaxHealth or 100
@@ -460,8 +460,9 @@ local function spawnOreAtPoint(spawnPoint)
 	rock:SetAttribute("BaseMaxHealth", baseMaxHealth)
 	rock:SetAttribute("MaxHealth", scaledMaxHealth)
 	rock:SetAttribute("Health", scaledMaxHealth)
-	rock:SetAttribute("OreType", oreType)
-	rock:SetAttribute("Depleted", false)
+        rock:SetAttribute("OreType", oreType)
+        rock:SetAttribute("Depleted", false)
+        rock:SetAttribute("HitCount", 0)
 
 	-- store rarity on the rock + apply FX
 	local rarity = (config and config.Rarity) or "Common"
@@ -534,10 +535,15 @@ local function onMineRock(player, hitInstance)
 	local health = rock:GetAttribute("Health")
 	if not maxHealth or not health then return end
 
-	health -= damage
-	rock:SetAttribute("Health", health)
+        health -= damage
+        rock:SetAttribute("Health", health)
 
-	updateRockScale(rock)
+        local hitCount = (rock:GetAttribute("HitCount") or 0) + 1
+        rock:SetAttribute("HitCount", hitCount)
+
+        if (hitCount % 3) == 0 or health <= 0 then
+                updateRockScale(rock)
+        end
 	updateOreLabel(rock)
 
 	if health <= 0 then
