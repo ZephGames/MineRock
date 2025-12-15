@@ -437,6 +437,21 @@ local function canPlaceAt(position)
         return true
 end
 
+local NATURAL_SURFACE_ATTRIBUTE = "AllowOreSpawn"
+local NATURAL_MATERIALS = {
+        [Enum.Material.Grass] = true,
+        [Enum.Material.Ground] = true,
+        [Enum.Material.Mud] = true,
+        [Enum.Material.Rock] = true,
+        [Enum.Material.Sand] = true,
+        [Enum.Material.Slate] = true,
+        [Enum.Material.CrackedLava] = true,
+}
+
+local function isNaturalMaterial(material)
+        return NATURAL_MATERIALS[material] == true
+end
+
 local function isValidSurface(result)
         if not result then
                 return false
@@ -446,21 +461,26 @@ local function isValidSurface(result)
                 return false
         end
 
+        -- avoid spawning on near-vertical or upside-down surfaces
+        if result.Normal.Y < 0.6 then
+                return false
+        end
+
         local inst = result.Instance
         if inst:IsA("Terrain") then
                 return true
         end
 
         if inst:IsA("BasePart") then
-                if not inst.CanCollide then
+                if not inst.CanCollide or not inst.Anchored then
                         return false
                 end
 
-                if not inst.Anchored then
-                        return false
+                if inst:GetAttribute(NATURAL_SURFACE_ATTRIBUTE) then
+                        return true
                 end
 
-                return true
+                return isNaturalMaterial(result.Material)
         end
 
         return false
