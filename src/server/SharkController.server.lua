@@ -62,6 +62,15 @@ local function ensureMover(instance, className, name, props)
     return mover
 end
 
+local function disableCollisions(model)
+    for _, descendant in ipairs(model:GetDescendants()) do
+        if descendant:IsA("BasePart") then
+            descendant.CanCollide = false
+            descendant.CanTouch = false
+        end
+    end
+end
+
 local function createState(model)
     local root = findRoot(model)
     if not root then
@@ -69,6 +78,7 @@ local function createState(model)
     end
 
     root.Anchored = false
+    disableCollisions(model)
 
     local bodyVelocity = ensureMover(root, "BodyVelocity", "SharkBodyVelocity", {
         MaxForce = Vector3.new(1e6, 1e6, 1e6),
