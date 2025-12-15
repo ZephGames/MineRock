@@ -425,39 +425,85 @@ local function chooseRandomOreType()
 end
 
 local function canPlaceAt(position)
-	for _, rock in ipairs(rockFolder:GetChildren()) do
-		local primary = rock.PrimaryPart
-		if primary then
-			local dist = (primary.Position - position).Magnitude
+        for _, rock in ipairs(rockFolder:GetChildren()) do
+                local primary = rock.PrimaryPart
+                if primary then
+                        local dist = (primary.Position - position).Magnitude
 			if dist < MIN_ROCK_GAP then
 				return false
 			end
 		end
-	end
-	return true
+        end
+        return true
+end
+
+local function isValidSurface(result)
+        if not result then
+                return false
+        end
+
+        if result.Material == Enum.Material.Water then
+                return false
+        end
+
+        local inst = result.Instance
+        if inst:IsA("Terrain") then
+                return true
+        end
+
+        if inst:IsA("BasePart") then
+                if not inst.CanCollide then
+                        return false
+                end
+
+                if not inst.Anchored then
+                        return false
+                end
+
+                return true
+        end
+
+        return false
 end
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
 rayParams.FilterDescendantsInstances = { rockFolder }
+rayParams.IgnoreWater = true
 
 local function findGroundPosition(spawnPoint)
 	for _ = 1, 10 do
 		local angle = math.random() * math.pi * 2
 		local radius = math.random() * SPAWN_RADIUS
-		local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+                local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
 
-		local origin = spawnPoint.Position + offset + Vector3.new(0, 40, 0)
-		local result = Workspace:Raycast(origin, Vector3.new(0, -100, 0), rayParams)
+                local origin = spawnPoint.Position + offset + Vector3.new(0, 40, 0)
+                local result = Workspace:Raycast(origin, Vector3.new(0, -100, 0), rayParams)
 
-		if result then
-			local pos = result.Position
-			if canPlaceAt(pos) then
-				return pos
-			end
-		end
-	end
-	return nil
+                if isValidSurface(result) then
+                        local pos = result.Position
+                        if canPlaceAt(pos) then
+                                return pos, result.Normal
+                        end
+                end
+        end
+        return nil
+end
+
+local function buildSurfaceCFrame(position, normal)
+        local up = normal.Unit
+
+        local fallback = math.abs(up:Dot(Vector3.new(0, 1, 0))) > 0.99 and Vector3.new(1, 0, 0) or Vector3.new(0, 1, 0)
+        local right = up:Cross(fallback)
+        if right.Magnitude < 1e-4 then
+                right = up:Cross(Vector3.new(0, 0, 1))
+        end
+        right = right.Unit
+
+        local baseCFrame = CFrame.fromMatrix(position, right, up)
+        local twist = CFrame.fromAxisAngle(up, math.random() * math.pi * 2)
+
+        return baseCFrame * twist
 end
 
 local function spawnOreAtPoint(spawnPoint)
@@ -488,14 +534,13 @@ local function spawnOreAtPoint(spawnPoint)
 		return nil
 	end
 
-	local pos = findGroundPosition(spawnPoint)
-	if not pos then
-		rock:Destroy()
-		return nil
-	end
+        local pos, normal = findGroundPosition(spawnPoint)
+        if not pos or not normal then
+                rock:Destroy()
+                return nil
+        end
 
-	local yRot = math.random() * math.pi * 2
-	rock:SetPrimaryPartCFrame(CFrame.new(pos) * CFrame.Angles(0, yRot, 0))
+        rock:SetPrimaryPartCFrame(buildSurfaceCFrame(pos, normal))
 
 	-- random size
 	local sizeMult = math.random(math.floor(SCALE_MIN * 100), math.floor(SCALE_MAX * 100)) / 100
