@@ -7,7 +7,9 @@ local RunService = game:GetService("RunService")
 
 local SHARK_TAG = "Shark"
 local SWIM_SPEED = 35
+local CHASE_SPEED_MULTIPLIER = 1.15
 local TURN_RATE = math.rad(45)
+local TURN_SMOOTHNESS = 6 -- higher is snappier. Used to smooth out oscillations when steering.
 local DRIFT_INTERVAL = 3
 local AVOID_DISTANCE = 25
 local SIDE_CHECK_ANGLE = math.rad(35)
@@ -16,7 +18,7 @@ local MIN_MOVEMENT_SQ = 4 -- 2 studs of movement squared
 local HEIGHT_ADJUST_SPEED = 6
 local PLAYER_DETECTION_RANGE = 175
 local PLAYER_LOSE_RANGE = 200
-local ATTACK_DISTANCE = 6
+local ATTACK_DISTANCE = 8
 local TARGET_REFRESH_INTERVAL = 0.4
 local TARGET_SWITCH_MARGIN = 4 -- studs. Require a meaningful improvement before swapping targets.
 
@@ -198,6 +200,7 @@ local function adjustDirectionFromHit(state, hitResult)
     end
 
     state.direction = reflected
+    return reflected
 end
 
 local function checkObstacles(state)
@@ -206,8 +209,7 @@ local function checkObstacles(state)
 
     local forwardResult = workspace:Raycast(root.Position, direction * AVOID_DISTANCE, state.raycastParams)
     if forwardResult then
-        adjustDirectionFromHit(state, forwardResult)
-        return
+        return adjustDirectionFromHit(state, forwardResult)
     end
 
     local leftDir = rotateY(direction, SIDE_CHECK_ANGLE)
@@ -218,14 +220,14 @@ local function checkObstacles(state)
 
     if leftHit and rightHit then
         if leftHit.Distance < rightHit.Distance then
-            state.direction = rotateY(direction, -TURN_RATE)
+            return rotateY(direction, -TURN_RATE)
         else
-            state.direction = rotateY(direction, TURN_RATE)
+            return rotateY(direction, TURN_RATE)
         end
     elseif leftHit then
-        state.direction = rotateY(direction, -TURN_RATE)
+        return rotateY(direction, -TURN_RATE)
     elseif rightHit then
-        state.direction = rotateY(direction, TURN_RATE)
+        return rotateY(direction, TURN_RATE)
     end
 end
 
@@ -244,15 +246,16 @@ local function updateShark(state, dt)
     end
 
     local target = updateTarget(state, dt)
+    local desiredDirection = state.direction
     if target then
         local toTarget = target.root.Position - state.root.Position
         local planarToTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
 
         if planarToTarget.Magnitude > 1 then
-            state.direction = planarToTarget.Unit
-            state.lastPlanarDir = state.direction
+            desiredDirection = planarToTarget.Unit
+            state.lastPlanarDir = desiredDirection
         elseif state.lastPlanarDir then
-            state.direction = state.lastPlanarDir
+            desiredDirection = state.lastPlanarDir
         end
 
         state.driftTimer = 0
@@ -261,12 +264,12 @@ local function updateShark(state, dt)
         updateTargetHeight(state, nil)
     end
 
-    checkObstacles(state)
+    local obstacleDirection = checkObstacles(state)
 
     state.driftTimer += dt
     if not target and state.driftTimer >= DRIFT_INTERVAL then
         local driftAngle = math.random(-10, 10)
-        state.direction = rotateY(state.direction, math.rad(driftAngle)).Unit
+        desiredDirection = rotateY(desiredDirection, math.rad(driftAngle)).Unit
         state.driftTimer = 0
     end
 
@@ -275,13 +278,19 @@ local function updateShark(state, dt)
     if delta:Dot(delta) < MIN_MOVEMENT_SQ then
         state.stuckTimer += dt
         if state.stuckTimer >= STUCK_CHECK_INTERVAL then
-            state.direction = rotateY(randomHorizontalUnit(), math.rad(math.random(-45, 45))).Unit
+            desiredDirection = rotateY(randomHorizontalUnit(), math.rad(math.random(-45, 45))).Unit
             state.stuckTimer = 0
         end
     else
         state.stuckTimer = 0
         state.lastPosition = rootPosition
     end
+
+    if obstacleDirection then
+        desiredDirection = obstacleDirection
+    end
+
+    state.direction = state.direction:Lerp(desiredDirection, math.clamp(dt * TURN_SMOOTHNESS, 0, 1))
 
     local planarDir = Vector3.new(state.direction.X, 0, state.direction.Z)
     if planarDir.Magnitude < 0.1 then
@@ -294,9 +303,10 @@ local function updateShark(state, dt)
     state.targetHeight = math.min(state.targetHeight, state.surfaceHeight)
 
     local verticalDelta = state.targetHeight - rootPosition.Y
-    local verticalSpeed = math.clamp(verticalDelta * HEIGHT_ADJUST_SPEED, -SWIM_SPEED, SWIM_SPEED)
+    local swimSpeed = target and (SWIM_SPEED * CHASE_SPEED_MULTIPLIER) or SWIM_SPEED
+    local verticalSpeed = math.clamp(verticalDelta * HEIGHT_ADJUST_SPEED, -swimSpeed, swimSpeed)
 
-    state.bodyVelocity.Velocity = Vector3.new(planarDir.X, 0, planarDir.Z) * SWIM_SPEED + Vector3.new(0, verticalSpeed, 0)
+    state.bodyVelocity.Velocity = Vector3.new(planarDir.X, 0, planarDir.Z) * swimSpeed + Vector3.new(0, verticalSpeed, 0)
 
     local lookPoint = rootPosition + planarDir
     state.bodyGyro.CFrame = CFrame.new(rootPosition, lookPoint)
