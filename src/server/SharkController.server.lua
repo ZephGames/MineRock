@@ -18,6 +18,7 @@ local PLAYER_DETECTION_RANGE = 175
 local PLAYER_LOSE_RANGE = 200
 local ATTACK_DISTANCE = 6
 local TARGET_REFRESH_INTERVAL = 0.4
+local TARGET_SWITCH_MARGIN = 4 -- studs. Require a meaningful improvement before swapping targets.
 
 local function randomHorizontalUnit()
     local theta = math.random() * math.pi * 2
@@ -137,6 +138,7 @@ local function findPlayerTarget(state)
             best = {
                 humanoid = humanoid,
                 root = root,
+                distSq = distSq,
             }
         end
     end
@@ -166,7 +168,15 @@ local function updateTarget(state, dt)
             local offset = root.Position - state.root.Position
             local distSq = offset:Dot(offset)
             if distSq <= PLAYER_LOSE_RANGE * PLAYER_LOSE_RANGE then
-                return target
+                local bestTarget = findPlayerTarget(state)
+
+                if bestTarget and bestTarget.distSq and bestTarget.distSq + (TARGET_SWITCH_MARGIN * TARGET_SWITCH_MARGIN) < distSq then
+                    state.target = bestTarget
+                else
+                    state.target = target
+                end
+
+                return state.target
             end
         end
     end
