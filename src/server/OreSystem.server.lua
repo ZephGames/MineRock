@@ -235,6 +235,18 @@ local function clearExistingPickaxes(player)
 	cleanContainer(player.Character)
 end
 
+local function ensureBackpack(player)
+	local backpack = player:FindFirstChildOfClass("Backpack") or player:FindFirstChild("Backpack")
+	if backpack then
+		return backpack
+	end
+
+	backpack = Instance.new("Backpack")
+	backpack.Name = "Backpack"
+	backpack.Parent = player
+	return backpack
+end
+
 local _templateWarned = {}
 
 local function ensurePickaxeEquipped(player, tierIndex)
@@ -246,7 +258,7 @@ local function ensurePickaxeEquipped(player, tierIndex)
 		end
 		return
 	end
-	local backpack = player:FindFirstChildOfClass("Backpack") or player:FindFirstChild("Backpack") or player:WaitForChild("Backpack", 5)
+	local backpack = ensureBackpack(player)
 	if not backpack then return end
 
 	clearExistingPickaxes(player)
