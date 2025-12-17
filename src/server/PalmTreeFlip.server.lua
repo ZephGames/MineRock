@@ -4,7 +4,7 @@
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
-local CLICK_TARGET_PATH = { "Models", "Palm Tree" }
+local CLICK_TARGET_PATH = { "Models", "Palm Tree." }
 local CLICK_THRESHOLD = 10
 local FLIP_DURATION = 2.5
 local JUMP_HEIGHT = 2.5
