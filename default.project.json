@@ -4,23 +4,15 @@
     "$className": "DataModel",
 
     "ReplicatedStorage": {
-      "RojoShared": {
-        "$path": "src/shared"
-      }   
+      "RojoShared": { "$path": "src/shared" },
+      "Tools": { "$path": "src/tools" }
     },
 
-    "ServerScriptService": {
-      "$path": "src/server"
-    },
+    "ServerScriptService": { "$path": "src/server" },
 
     "StarterPlayer": {
-      "StarterPlayerScripts": {
-        "$path": "src/client",
-
-    "StarterCharacterScripts": {
-        "$path": "src/character"
-        }
-      }
+      "StarterPlayerScripts": { "$path": "src/client" },
+      "StarterCharacterScripts": { "$path": "src/character" }
     }
   }
 }
