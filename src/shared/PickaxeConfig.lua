@@ -2,13 +2,17 @@
 local PickaxeConfig = {}
 
 PickaxeConfig.Tiers = {
-  { Id="ForemanSteel",    DisplayName="Foreman Steel",
-    Damage=10, Cooldown=0.55, CritChance=0.05, CritMultiplier=1.5, Cost=0,
-    Description="Basic workhorse.", Color=Color3.fromRGB(210,210,210),
-    SizeScale=1.22, GlowBrightness=0, RainbowGlow=false,
-    -- fine-tune spawn-in alignment (optional):
-    MountOffset=Vector3.new(0, -0.55, -0.35), MountAngles=Vector3.new(-10,-90,10),
-  },
+	{ Id = "ForemanSteel", DisplayName = "Foreman Steel",
+		Damage = 10, Cooldown = 0.55, CritChance = 0.05, CritMultiplier = 1.5, Cost = 0,
+		Description = "Basic workhorse.",
+		Color = Color3.fromRGB(210,210,210),
+		SizeScale = 1.22, GlowBrightness = 0, RainbowGlow = false,
+
+		-- ⇩ NEW: per-tier alignment so it sits in the hand
+		-- Y is down/up (more negative = lower), Z is forward/back (more negative = forward)
+		MountOffset = Vector3.new(0, -1.35, -0.55),
+		MountAngles = Vector3.new(-10, -90, 10),
+	},
   { Id="EmberGrip",       DisplayName="Ember Grip",
     Damage=14, Cooldown=0.52, CritChance=0.06, CritMultiplier=1.55, Cost=250,
     Description="Heat-forged for steadier swings.",

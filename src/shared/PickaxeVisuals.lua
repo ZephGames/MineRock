@@ -1,19 +1,22 @@
 -- ReplicatedStorage/RojoShared/PickaxeVisuals.lua
--- Mounts the correct tier model onto a permanent Tool.Handle
--- Works with Model or MeshPart templates. Supports Grip attachment or per-tier offsets.
+-- Production: no console spam. No-flicker mount + alignment (Grip -> Config -> Defaults -> Heuristic).
 
-local Players = game:GetService("Players")
+local Players        = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local RunService     = game:GetService("RunService")
 
 local PickaxeVisuals = {}
-PickaxeVisuals.DEBUG = true
-local function d(...) if PickaxeVisuals.DEBUG then print("[PickaxeVisuals]", ...) end end
+PickaxeVisuals.DEBUG = false -- keep for emergency; otherwise silent
+
+-- Optional built-in defaults for assets with odd pivots (only used if no Grip & no Config)
+local DEFAULT_OFFSETS = {
+	ForemanSteel = { offset = Vector3.new(0, -1.35, -0.55), angles = Vector3.new(-10, -90, 10) },
+}
 
 local function gatherParts(root)
 	local t = {}
 	for _, d in ipairs(root:GetDescendants()) do
-		if d:IsA("BasePart") then table.insert(t, d) end
+		if d:IsA("BasePart") then t[#t+1] = d end
 	end
 	return t
 end
@@ -26,15 +29,14 @@ local function getTierIndex(player)
 	return 1
 end
 
-local function findTemplate(ModelsFolder, cfg, idx)
-	if not ModelsFolder then return nil end
-	if cfg.ModelName and ModelsFolder:FindFirstChild(cfg.ModelName) then return ModelsFolder[cfg.ModelName] end
-	if cfg.Id and ModelsFolder:FindFirstChild(cfg.Id) then return ModelsFolder[cfg.Id] end
+local function findTemplate(modelsFolder, cfg, idx)
+	if not modelsFolder then return nil end
+	if cfg.ModelName and modelsFolder:FindChild(cfg.ModelName) then return modelsFolder[cfg.ModelName] end
+	if cfg.Id and modelsFolder:FindChild(cfg.Id) then return modelsFolder[cfg.Id] end
 	local guess = "Pickaxe"..idx
-	return ModelsFolder:FindFirstChild(guess)
+	return modelsFolder:FindChild(guess)
 end
 
--- Clone and ensure we return a Model with a PrimaryPart
 local function cloneAsModel(template)
 	local inst = template:Clone()
 	if inst:IsA("Model") then
@@ -48,10 +50,8 @@ local function cloneAsModel(template)
 	local model = Instance.new("Model")
 	model.Name = template.Name
 	inst.Parent = model
-	local primary = nil
-	if inst:IsA("BasePart") then
-		primary = inst
-	else
+	local primary = inst:IsA("BasePart") and inst or nil
+	if not primary then
 		for _, d in ipairs(model:GetDescendants()) do
 			if d:IsA("BasePart") then primary = d break end
 		end
@@ -60,9 +60,9 @@ local function cloneAsModel(template)
 	return model
 end
 
--- Alignment strategies
+-- alignment strategies
 local function alignUsingGripAttachment(model, handle)
-	local grip = model:FindFirstChild("Grip", true) -- Attachment anywhere inside
+	local grip = model:FindFirstChild("Grip", true)
 	if grip and grip:IsA("Attachment") then
 		local mcf = model:GetPivot()
 		local localGrip = mcf:ToObjectSpace(grip.WorldCFrame)
@@ -71,17 +71,23 @@ local function alignUsingGripAttachment(model, handle)
 	return nil
 end
 
-local function alignUsingConfig(model, handle, cfg)
-	local off = cfg.MountOffset
-	local ang = cfg.MountAngles
+local function alignUsingConfig(handle, cfg)
+	local off, ang = cfg.MountOffset, cfg.MountAngles
 	if typeof(off) == "Vector3" or typeof(ang) == "Vector3" then
 		local cf = handle.CFrame
-		if typeof(off) == "Vector3" then
-			cf = cf * CFrame.new(off)
-		end
-		if typeof(ang) == "Vector3" then
-			cf = cf * CFrame.Angles(math.rad(ang.X), math.rad(ang.Y), math.rad(ang.Z))
-		end
+		if typeof(off) == "Vector3" then cf = cf * CFrame.new(off) end
+		if typeof(ang) == "Vector3" then cf = cf * CFrame.Angles(math.rad(ang.X), math.rad(ang.Y), math.rad(ang.Z)) end
+		return cf
+	end
+	return nil
+end
+
+local function alignUsingDefaults(handle, cfg)
+	local def = DEFAULT_OFFSETS[cfg.Id]
+	if def then
+		local cf = handle.CFrame
+		if def.offset then cf = cf * CFrame.new(def.offset) end
+		if def.angles then cf = cf * CFrame.Angles(math.rad(def.angles.X), math.rad(def.angles.Y), math.rad(def.angles.Z)) end
 		return cf
 	end
 	return nil
@@ -94,45 +100,60 @@ local function alignUsingHeuristic(model, handle)
 	return handle.CFrame * CFrame.new(0, down, fwd)
 end
 
-local function mountModelToHandle(model, handle, cfg)
-	local targetCF = alignUsingGripAttachment(model, handle)
-		or alignUsingConfig(model, handle, cfg)
+local function chooseAlignment(model, handle, cfg)
+	return alignUsingGripAttachment(model, handle)
+		or alignUsingConfig(handle, cfg)
+		or alignUsingDefaults(handle, cfg)
 		or alignUsingHeuristic(model, handle)
+end
 
-	model:PivotTo(targetCF)
+-- no-flicker mount
+local function mountModelToHandle(model, handle, cfg)
+	local parts = gatherParts(model)
+	local savedTransparency = table.create(#parts)
+	for i, p in ipairs(parts) do
+		savedTransparency[i] = p.Transparency
+		p.Anchored   = true
+		p.CanCollide = false
+		p.CanTouch   = false
+		p.CanQuery   = false
+		p.Massless   = true
+		p.Transparency = 1
+	end
 
-	for _, p in ipairs(gatherParts(model)) do
-		p.Anchored  = false
-		p.CanCollide= false
-		p.CanTouch  = false
-		p.CanQuery  = false
-		p.Massless  = true
+	local cf = chooseAlignment(model, handle, cfg)
+	model:PivotTo(cf)
+
+	for _, p in ipairs(parts) do
 		local w = Instance.new("WeldConstraint")
-		w.Part0 = p
-		w.Part1 = handle
+		w.Part0, w.Part1 = p, handle
 		w.Parent = p
 	end
 
-	handle.Anchored = false
+	for i, p in ipairs(parts) do
+		p.Anchored = false
+		p.Transparency = savedTransparency[i] or 0
+	end
+
+	handle.Anchored   = false
 	handle.CanCollide = false
-	handle.CanTouch  = false
-	handle.CanQuery  = false
-	handle.Massless  = true
+	handle.CanTouch   = false
+	handle.CanQuery   = false
+	handle.Massless   = true
 end
 
 function PickaxeVisuals.init(tool)
-	assert(tool and tool:IsA("Tool"), "PickaxeVisuals.init expected a Tool")
+	if not (tool and tool:IsA("Tool")) then return end
 
 	local player = Players.LocalPlayer
 	local Shared = ReplicatedStorage:WaitForChild("RojoShared")
 	local PickaxeConfig = require(Shared:WaitForChild("PickaxeConfig"))
 	local ModelsFolder  = ReplicatedStorage:FindFirstChild("PickaxeModels")
-	assert(ModelsFolder, "ReplicatedStorage/PickaxeModels missing")
+	if not ModelsFolder then return end
 
 	tool.CanBeDropped = false
 	tool.RequiresHandle = true
 
-	-- Ensure permanent tiny handle for Roblox grip
 	local handle = tool:FindFirstChild("Handle")
 	if not (handle and handle:IsA("BasePart")) then
 		handle = Instance.new("Part")
@@ -151,34 +172,29 @@ function PickaxeVisuals.init(tool)
 	handle.Massless     = true
 	handle.Anchored     = false
 
-	-- Light for glow
-	local glow = nil
+	local glow, activeModel, visualParts = nil, nil, {}
+	local rainbow, hue = false, 0
 	local function ensureGlow()
-		if not glow then
-			glow = Instance.new("PointLight")
-			glow.Name = "PickaxeGlow"
-			glow.Range = 12
-			glow.Brightness = 0
-			glow.Enabled = false
-			glow.Parent = handle
-		end
-		return glow
+		if glow then return glow end
+		local L = Instance.new("PointLight")
+		L.Name = "PickaxeGlow"
+		L.Range = 12
+		L.Brightness = 0
+		L.Enabled = false
+		L.Parent = handle
+		glow = L
+		return L
 	end
 
-	local activeModel = nil
-	local visualParts = {}
-	local rainbow, hue = false, 0
-
+	local applying = false
 	local function clearModel()
 		if activeModel then activeModel:Destroy() activeModel = nil end
 		for _, ch in ipairs(tool:GetChildren()) do
 			if ch.Name == "_ActiveModel" and ch:IsA("Model") then ch:Destroy() end
 		end
-		visualParts = {}
-		rainbow, hue = false, 0
+		visualParts, rainbow, hue = {}, false, 0
 	end
 
-	local applying = false
 	local function applyTier()
 		if applying then return end
 		applying = true
@@ -186,18 +202,16 @@ function PickaxeVisuals.init(tool)
 		local idx = math.clamp(getTierIndex(player), 1, PickaxeConfig.GetTierCount())
 		local cfg = PickaxeConfig.GetTier(idx) or {}
 		local disp = cfg.DisplayName or cfg.Id or ("Pickaxe "..idx)
-		tool.Name = disp
-		tool.ToolTip = disp
+		tool.Name, tool.ToolTip = disp, disp
 
 		local template = findTemplate(ModelsFolder, cfg, idx)
-		if not template then d("No model for tier", idx, cfg.Id or "?") applying = false return end
+		if not template then applying = false return end
 
 		clearModel()
 		activeModel = cloneAsModel(template)
 		activeModel.Name = "_ActiveModel"
 		activeModel.Parent = tool
 
-		-- scale before alignment so offsets use final size
 		if (cfg.SizeScale and type(cfg.SizeScale)=="number") then
 			activeModel:ScaleTo(cfg.SizeScale)
 		end
@@ -216,14 +230,13 @@ function PickaxeVisuals.init(tool)
 			p.Color = color
 		end
 
-		d(("Applied tier %d (%s), parts=%d"):format(idx, tostring(cfg.Id), #visualParts))
 		applying = false
 	end
 
 	RunService.Heartbeat:Connect(function(dt)
 		if rainbow and glow and #visualParts > 0 then
 			hue = (hue + dt * 0.20) % 1
-			local c = Color3.fromHSV(hue,1,1)
+			local c = Color3.fromHSV(hue, 1, 1)
 			glow.Color = c
 			for _, p in ipairs(visualParts) do
 				p.Material = Enum.Material.Neon
