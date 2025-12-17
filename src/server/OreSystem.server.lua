@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local MarketplaceService = game:GetService("MarketplaceService")
+local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("RojoShared")
 local OreConfig = require(Shared:WaitForChild("OreConfig"))
@@ -158,6 +159,26 @@ local lastMineRemoteTimes = {}
 local REMOTE_MIN_INTERVAL = 0.05
 local streakState = {}
 
+local function getPickaxeContainers()
+	local containers = {
+		ReplicatedStorage:FindFirstChild("PickaxeTools"),
+		ReplicatedStorage:FindFirstChild("Pickaxes"),
+		ReplicatedStorage:FindFirstChild("Tools"),
+		ServerStorage:FindFirstChild("PickaxeTools"),
+		ServerStorage:FindFirstChild("Pickaxes"),
+		ServerStorage:FindFirstChild("Tools"),
+	}
+
+	local filtered = {}
+	for _, folder in ipairs(containers) do
+		if folder then
+			table.insert(filtered, folder)
+		end
+	end
+
+	return filtered
+end
+
 local function getPickaxeTierValue(player)
         local v = player:FindFirstChild("PickaxeTier")
         if v and typeof(v.Value) == "number" then
@@ -175,6 +196,85 @@ local function getPickaxeStats(player)
         local critChance = cfg.CritChance or 0
         local critMultiplier = cfg.CritMultiplier or 1.5
         return damage, cooldown, tierIndex, cfg, critChance, critMultiplier
+end
+
+local function findPickaxeTemplate(tierIndex)
+	local cfg = PickaxeConfig.GetTier(tierIndex)
+	if not cfg then
+		return nil
+	end
+
+	local candidateNames = {}
+	local function addCandidate(name)
+		if typeof(name) == "string" and name ~= "" then
+			table.insert(candidateNames, name)
+		end
+	end
+
+	addCandidate(cfg.ToolName)
+	addCandidate(cfg.Id)
+	addCandidate(cfg.DisplayName)
+	if cfg.Id then
+		addCandidate(cfg.Id .. "Pickaxe")
+		addCandidate(cfg.Id .. " Pickaxe")
+	end
+	addCandidate("Pickaxe")
+
+	for _, container in ipairs(getPickaxeContainers()) do
+		for _, name in ipairs(candidateNames) do
+			local template = container:FindFirstChild(name)
+			if template and template:IsA("Tool") then
+				return template
+			end
+		end
+	end
+
+	return nil
+end
+
+local function clearExistingPickaxes(player)
+	local function cleanContainer(container)
+		if not container then
+			return
+		end
+
+		for _, child in ipairs(container:GetChildren()) do
+			if child:IsA("Tool") then
+				local nameLower = string.lower(child.Name)
+				if child:GetAttribute("IsPickaxe") == true or nameLower:find("pickaxe") then
+					child:Destroy()
+				end
+			end
+		end
+	end
+
+	cleanContainer(player:FindFirstChildOfClass("Backpack") or player:FindFirstChild("Backpack"))
+	cleanContainer(player.Character)
+end
+
+local function ensurePickaxeEquipped(player, tierIndex)
+	local template = findPickaxeTemplate(tierIndex)
+	if not template then
+		warn(string.format("No pickaxe template found for %s at tier %d", player.Name, tierIndex))
+		return
+	end
+
+	local backpack = player:FindFirstChildOfClass("Backpack") or player:FindFirstChild("Backpack") or player:WaitForChild("Backpack", 5)
+	if not backpack then
+		warn("Backpack missing for", player.Name)
+		return
+	end
+
+	clearExistingPickaxes(player)
+
+	local newTool = template:Clone()
+	newTool:SetAttribute("IsPickaxe", true)
+	newTool.Parent = backpack
+
+	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid:EquipTool(newTool)
+	end
 end
 
 local function updateStreak(player, now)
@@ -763,16 +863,27 @@ MineRockEvent.OnServerEvent:Connect(onMineRock)
 Players.PlayerAdded:Connect(function(player)
         getOrCreateCoins(player)
 
-        player:SetAttribute("MiningStreak", 0)
-        player:SetAttribute("MiningMomentum", 1)
-        player:SetAttribute("RecentShardGain", 0)
+	player:SetAttribute("MiningStreak", 0)
+	player:SetAttribute("MiningMomentum", 1)
+	player:SetAttribute("RecentShardGain", 0)
 
-        local tierValue = Instance.new("IntValue")
-        tierValue.Name = "PickaxeTier"
-        tierValue.Value = 1
-        tierValue.Parent = player
+	local tierValue = Instance.new("IntValue")
+	tierValue.Name = "PickaxeTier"
+	tierValue.Value = 1
+	tierValue.Parent = player
 
-        getOrCreateInventory(player)
+	local function refreshPickaxe()
+		ensurePickaxeEquipped(player, getPickaxeTierValue(player))
+	end
+
+	tierValue.Changed:Connect(refreshPickaxe)
+	player.CharacterAdded:Connect(function()
+		task.defer(refreshPickaxe)
+	end)
+
+	refreshPickaxe()
+
+	getOrCreateInventory(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
