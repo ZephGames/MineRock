@@ -1,0 +1,11 @@
+{
+  "$className": "Part",
+  "Name": "Handle",
+  "Size": [0.2, 0.2, 0.2],
+  "Transparency": 1,
+  "Anchored": false,
+  "CanCollide": false,
+  "CanTouch": false,
+  "CanQuery": false,
+  "Massless": true
+}
