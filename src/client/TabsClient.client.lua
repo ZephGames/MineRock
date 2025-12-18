@@ -577,7 +577,7 @@ shopTitle.Size = UDim2.new(1,0,0,30)
 shopTitle.Parent = shopTitleFrame
 
 local shopSubtitle = Instance.new("TextLabel")
-shopSubtitle.Text = "Sell ores or upgrade your tools"
+shopSubtitle.Text = "Sell ores or upgrade your pickaxe"
 shopSubtitle.Font = Enum.Font.Gotham
 shopSubtitle.TextSize = 16
 shopSubtitle.TextColor3 = THEME.TextDim
@@ -669,8 +669,13 @@ pickView.AutomaticCanvasSize = Enum.AutomaticSize.Y
 pickView.Parent = shopContent
 shopPages["Pickaxes"] = pickView
 
+local function openPickaxeTab()
+        switchShopTab("Pickaxes")
+end
+
 btnSell.MouseButton1Click:Connect(function() switchShopTab("Sell") end)
-btnPicks.MouseButton1Click:Connect(function() switchShopTab("Pickaxes") end)
+btnPicks.MouseButton1Click:Connect(openPickaxeTab)
+btnPicks.Activated:Connect(openPickaxeTab)
 
 -- Close Button (Absolute positioned on ShopFrame to overlap right corner)
 local shopCloseBtn, scStroke, scGrad, scLbl = createGlassButton(shopFrame, "X", UDim2.new(0, 40, 0, 40))
