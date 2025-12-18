@@ -190,7 +190,6 @@ local function createGlassButton(parent, text, size)
 	local content = Instance.new("Frame")
 	content.BackgroundTransparency = 1
 	content.Size = UDim2.new(1, 0, 1, 0)
-	content.InputTransparent = true -- Prevents blocking clicks on the parent button
 	content.Parent = btn
 	
 	local label = Instance.new("TextLabel")
@@ -199,7 +198,6 @@ local function createGlassButton(parent, text, size)
 	label.Position = UDim2.new(0, 0, 0, 0)
 	label.Font = Enum.Font.GothamBold
 	label.Text = text
-	label.InputTransparent = true -- Ensure the parent TextButton receives the click
 	label.TextColor3 = THEME.TextMain
 	label.TextSize = 18 -- Larger font
 	label.TextXAlignment = Enum.TextXAlignment.Center
