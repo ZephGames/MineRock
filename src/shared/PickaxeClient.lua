@@ -5,6 +5,11 @@
 local PickaxeClient = {}
 
 function PickaxeClient.init(tool)
+  if not tool or not tool:IsA("Tool") then
+    warn("[PickaxeClient] init expected a Tool, got", tool and tool.ClassName or "nil")
+    return
+  end
+
   local Players = game:GetService("Players")
   local ReplicatedStorage = game:GetService("ReplicatedStorage")
   local Shared = ReplicatedStorage:WaitForChild("RojoShared")
