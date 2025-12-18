@@ -600,6 +600,7 @@ shopCoins.Parent = shopTitleFrame
 -- Shop Tabs Logic (using buttons in sidebar)
 local shopTabBtns = {}
 local shopPages = {}
+local updateShopButtons
 
 local function switchShopTab(name)
         for n, p in pairs(shopPages) do p.Visible = false end
@@ -660,22 +661,31 @@ sellViewPad.PaddingLeft = UDim.new(0, 6)
 sellViewPad.PaddingRight = UDim.new(0, 6)
 sellViewPad.Parent = sellView
 
+local pickPageFrame = Instance.new("Frame")
+pickPageFrame.BackgroundTransparency = 1
+pickPageFrame.Size = UDim2.new(1, 0, 1, 0)
+pickPageFrame.Visible = false
+pickPageFrame.Parent = shopContent
+shopPages["Pickaxes"] = pickPageFrame
+
 local pickView = Instance.new("ScrollingFrame")
 pickView.BackgroundTransparency = 1
 pickView.Size = UDim2.new(1, -12, 1, 0)
 pickView.ScrollBarThickness = 4
-pickView.Visible = false
 pickView.AutomaticCanvasSize = Enum.AutomaticSize.Y
-pickView.Parent = shopContent
-shopPages["Pickaxes"] = pickView
+pickView.Parent = pickPageFrame
 
 local function openPickaxeTab()
         switchShopTab("Pickaxes")
+        updateShopButtons()
 end
 
 btnSell.MouseButton1Click:Connect(function() switchShopTab("Sell") end)
 btnPicks.MouseButton1Click:Connect(openPickaxeTab)
 btnPicks.Activated:Connect(openPickaxeTab)
+
+-- Default to Sell tab on first load so pages have a consistent state
+switchShopTab("Sell")
 
 -- Close Button (Absolute positioned on ShopFrame to overlap right corner)
 local shopCloseBtn, scStroke, scGrad, scLbl = createGlassButton(shopFrame, "X", UDim2.new(0, 40, 0, 40))
@@ -900,7 +910,7 @@ if player:FindFirstChild("ActiveQuest") then
 end
 
 -- Pickaxe Button Updater
-local function updateShopButtons()
+function updateShopButtons()
 	local leaderstats = player:FindFirstChild("leaderstats")
 	local coins = leaderstats and leaderstats:FindFirstChild("Coins") and leaderstats.Coins.Value or 0
 	shopCoins.Text = "Coins: " .. coins
