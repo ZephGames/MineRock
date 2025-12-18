@@ -39,6 +39,8 @@ local ShopCenter = Workspace:WaitForChild("ShopCenter") -- Ensure this part exis
 local SELL_RADIUS = 15 -- Distance to open shop
 local SHOP_HIDE_RADIUS = 30 -- Distance to auto-close shop UI
 local SELL_ANYWHERE_PASS_ID = 1631522468
+local SHOP_OVERLAY_TRANSPARENCY = 0.55 -- Reduce darkness over the world when shop is open
+local SHOP_PANEL_TRANSPARENCY = 0.35 -- Lighten the shop container panels
 
 -- Devs who can use "!pass sell" locally (add any co-dev IDs here)
 local DEV_USER_IDS = {
@@ -494,7 +496,7 @@ shopOverlay.Size = UDim2.fromScale(1, 1)
 shopOverlay.BackgroundColor3 = Color3.fromRGB(6, 8, 12)
 shopOverlay.AutoButtonColor = false
 shopOverlay.BorderSizePixel = 0
-shopOverlay.BackgroundTransparency = 1
+shopOverlay.BackgroundTransparency = SHOP_OVERLAY_TRANSPARENCY
 shopOverlay.Modal = true
 shopOverlay.Text = ""
 shopOverlay.Visible = false
@@ -508,7 +510,7 @@ shopFrame.Size = UDim2.new(0.65, 0, 0.65, 0)
 shopFrame.Position = UDim2.new(0.5, 0, 1.5, 0) -- Hidden Bottom
 shopFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 shopFrame.BackgroundColor3 = Color3.fromRGB(12, 14, 20)
-shopFrame.BackgroundTransparency = 0.15
+shopFrame.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
 shopFrame.BorderSizePixel = 0
 shopFrame.ZIndex = 6
 shopFrame.Parent = shopOverlay
@@ -527,6 +529,7 @@ shopScale.Parent = shopFrame
 
 -- Shop Sidebar (Left)
 local shopSidebar = createGlassPanel(shopFrame, UDim2.new(0.25, -10, 1, 0), UDim2.new(0, 0, 0, 0))
+shopSidebar.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
 local shopSidebarLayout = Instance.new("UIListLayout")
 shopSidebarLayout.Padding = UDim.new(0, 10)
 shopSidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
@@ -592,6 +595,7 @@ end
 
 -- Shop Content (Right)
 local shopContent = createGlassPanel(shopFrame, UDim2.new(0.75, 0, 1, 0), UDim2.new(0.25, 12, 0, 0))
+shopContent.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
 local shopContentPad = Instance.new("UIPadding")
 shopContentPad.PaddingTop = UDim.new(0, 20)
 shopContentPad.PaddingBottom = UDim.new(0, 20)
@@ -645,6 +649,7 @@ shopCloseBtn.ZIndex = 10
 scLbl.TextSize = 22
 
 local isShopOpen = false
+local suppressShopAutoOpen = false
 
 -- SELL VIEW CONTENT
 local sellLayout = Instance.new("UIListLayout")
@@ -935,9 +940,10 @@ local function toggleShop(forceOpen)
         if forceOpen ~= nil then isShopOpen = forceOpen else isShopOpen = not isShopOpen end
 
         if isShopOpen then
+                suppressShopAutoOpen = false
                 shopOverlay.Visible = true
                 shopOverlay.Active = true
-                shopOverlay.BackgroundTransparency = 1
+                shopOverlay.BackgroundTransparency = SHOP_OVERLAY_TRANSPARENCY
                 tween(shopFrame, {Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
         else
                 tween(shopFrame, {Position = UDim2.new(0.5, 0, 1.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
@@ -949,7 +955,10 @@ local function toggleShop(forceOpen)
                 end)
         end
 end
-shopCloseBtn.MouseButton1Click:Connect(function() toggleShop(false) end)
+shopCloseBtn.MouseButton1Click:Connect(function()
+        suppressShopAutoOpen = true
+        toggleShop(false)
+end)
 
 -- =========================================================
 -- SELL-ANYWHERE MENU ICON (HIDDEN UNLESS PASS OR !pass sell)
@@ -1042,11 +1051,12 @@ task.spawn(function()
 			local hrp = char and char:FindFirstChild("HumanoidRootPart")
 			if hrp then
 				local dist = (hrp.Position - ShopCenter.Position).Magnitude
-                                if dist <= SELL_RADIUS and not isShopOpen then
-                                        toggleShop(true)
-                                elseif dist > SHOP_HIDE_RADIUS and isShopOpen then
-                                        toggleShop(false)
-                                end
+				if dist <= SELL_RADIUS and not isShopOpen and not suppressShopAutoOpen then
+					toggleShop(true)
+				elseif dist > SHOP_HIDE_RADIUS then
+					if isShopOpen then toggleShop(false) end
+					suppressShopAutoOpen = false
+				end
 			end
 		end
 	end
