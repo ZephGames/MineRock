@@ -39,7 +39,7 @@ local ShopCenter = Workspace:WaitForChild("ShopCenter") -- Ensure this part exis
 local SELL_RADIUS = 15 -- Distance to open shop
 local SHOP_HIDE_RADIUS = 30 -- Distance to auto-close shop UI
 local SELL_ANYWHERE_PASS_ID = 1631522468
-local SHOP_OVERLAY_TRANSPARENCY = 1 -- Match menu brightness (no world darkening)
+local SHOP_OVERLAY_TRANSPARENCY = 1 -- Keep overlay fully transparent (no darkening)
 local SHOP_PANEL_TRANSPARENCY = 0.15 -- Match menu panel brightness
 
 -- Devs who can use "!pass sell" locally (add any co-dev IDs here)
@@ -526,6 +526,40 @@ shopPadding.Parent = shopFrame
 
 local shopScale = Instance.new("UIScale")
 shopScale.Parent = shopFrame
+
+-- Shared UI scale handler (keeps layout consistent across resolutions)
+local BASE_RESOLUTION = Vector2.new(1920, 1080)
+local MIN_UI_SCALE, MAX_UI_SCALE = 0.85, 1
+
+local function updateUiScale()
+        local cam = Workspace.CurrentCamera
+        if not cam then return end
+
+        local viewport = cam.ViewportSize
+        local ratio = math.min(viewport.X / BASE_RESOLUTION.X, viewport.Y / BASE_RESOLUTION.Y)
+        local scale = math.clamp(ratio, MIN_UI_SCALE, MAX_UI_SCALE)
+
+        menuScale.Scale = scale
+        shopScale.Scale = scale
+end
+
+local function attachViewportListener()
+        local function hookCamera(cam)
+                if not cam then return end
+                cam:GetPropertyChangedSignal("ViewportSize"):Connect(updateUiScale)
+                updateUiScale()
+        end
+
+        if Workspace.CurrentCamera then
+                hookCamera(Workspace.CurrentCamera)
+        end
+
+        Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+                hookCamera(Workspace.CurrentCamera)
+        end)
+end
+
+attachViewportListener()
 
 -- Shop Sidebar (Left)
 local shopSidebar = createGlassPanel(shopFrame, UDim2.new(0.25, -10, 1, 0), UDim2.new(0, 0, 0, 0))
