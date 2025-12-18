@@ -203,25 +203,38 @@ local function createGlassButton(parent, text, size)
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.Parent = content
 
-	-- Interaction
-	btn.MouseEnter:Connect(function()
-		if btn.Active then
-			tween(btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
-			gradient.Enabled = true
-			stroke.Transparency = 0
-			stroke.Thickness = 2.5
-			tween(content, {Size = UDim2.new(1.05, 0, 1.05, 0)}, 0.2)
-		end
-	end)
+        local hovering = false
+        btn:SetAttribute("IsHovering", false)
 
-	btn.MouseLeave:Connect(function()
-		if btn:GetAttribute("Selected") then return end
-		tween(btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.3)
-		gradient.Enabled = false
-		stroke.Transparency = 0.8
-		stroke.Thickness = 1.5
-		tween(content, {Size = UDim2.new(1, 0, 1, 0)}, 0.3)
-	end)
+        local function applyBaseVisual()
+                local isSelected = btn:GetAttribute("Selected") == true
+                local bgTransparency = isSelected and 0.1 or 0.3
+                local bgColor = isSelected and THEME.GlassHover or THEME.Glass
+                tween(btn, {BackgroundTransparency = bgTransparency, BackgroundColor3 = bgColor}, 0.2)
+                stroke.Transparency = isSelected and 0 or 0.8
+                stroke.Thickness = isSelected and 2.5 or 1.5
+        end
+
+        -- Interaction
+        btn.MouseEnter:Connect(function()
+                if btn.Active then
+                        hovering = true
+                        btn:SetAttribute("IsHovering", true)
+                        tween(btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
+                        gradient.Enabled = true
+                        stroke.Transparency = 0
+                        stroke.Thickness = 2.5
+                        tween(content, {Size = UDim2.new(1.05, 0, 1.05, 0)}, 0.2)
+                end
+        end)
+
+        btn.MouseLeave:Connect(function()
+                hovering = false
+                btn:SetAttribute("IsHovering", false)
+                gradient.Enabled = false
+                applyBaseVisual()
+                tween(content, {Size = UDim2.new(1, 0, 1, 0)}, 0.3)
+        end)
 
 	btn.MouseButton1Down:Connect(function()
 		if btn.Active then
@@ -319,18 +332,19 @@ end
 local function switchMenuTab(name)
 	for n, p in pairs(menuPages) do p.Visible = false end
 	for n, data in pairs(menuTabs) do
-		local isMe = (n == name)
-		data.Btn:SetAttribute("Selected", isMe)
-		if isMe then
-			tween(data.Btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
-			data.Stroke.Transparency = 0
-			data.Grad.Enabled = true
-		else
-			tween(data.Btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
-			data.Stroke.Transparency = 0.8
-			data.Grad.Enabled = false
-		end
-	end
+                local isMe = (n == name)
+                data.Btn:SetAttribute("Selected", isMe)
+                local isHovering = data.Btn:GetAttribute("IsHovering") == true
+                if isMe then
+                        tween(data.Btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
+                        data.Stroke.Transparency = 0
+                        data.Grad.Enabled = isHovering
+                else
+                        tween(data.Btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
+                        data.Stroke.Transparency = 0.8
+                        data.Grad.Enabled = isHovering
+                end
+        end
 	if menuPages[name] then
 		menuPages[name].Visible = true
 		menuPages[name].Position = UDim2.new(0,0,0.05,0)
@@ -607,14 +621,15 @@ local function switchShopTab(name)
         for n, data in pairs(shopTabBtns) do
                 local isMe = (n == name)
                 data.Btn:SetAttribute("Selected", isMe)
+                local isHovering = data.Btn:GetAttribute("IsHovering") == true
                 if isMe then
                         tween(data.Btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
                         data.Stroke.Transparency = 0
-                        data.Grad.Enabled = true
+                        data.Grad.Enabled = isHovering
                 else
                         tween(data.Btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
                         data.Stroke.Transparency = 0.8
-                        data.Grad.Enabled = false
+                        data.Grad.Enabled = isHovering
                 end
         end
         if shopPages[name] then
@@ -680,7 +695,12 @@ local function openPickaxeTab()
         updateShopButtons()
 end
 
-btnSell.MouseButton1Click:Connect(function() switchShopTab("Sell") end)
+local function openSellTab()
+        switchShopTab("Sell")
+end
+
+btnSell.MouseButton1Click:Connect(openSellTab)
+btnSell.Activated:Connect(openSellTab)
 btnPicks.MouseButton1Click:Connect(openPickaxeTab)
 btnPicks.Activated:Connect(openPickaxeTab)
 
@@ -991,18 +1011,16 @@ end)
 -- Toggle Main Menu (Inventory/Quests)
 local function toggleMenu()
 	isMenuOpen = not isMenuOpen
-	if isMenuOpen then
-		local targetPos = UDim2.new(0.5, 0, 0.5, 0)
-		tween(menuFrame, {Position = targetPos}, 0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-		tween(menuBtn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.3)
-		mGrad.Enabled = true
-		mStroke.Transparency = 0
-	else
-		tween(menuFrame, {Position = UDim2.new(-1, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-		tween(menuBtn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.3)
-		mGrad.Enabled = false
-		mStroke.Transparency = 0.8
-	end
+        if isMenuOpen then
+                local targetPos = UDim2.new(0.5, 0, 0.5, 0)
+                tween(menuFrame, {Position = targetPos}, 0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+                tween(menuBtn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.3)
+                mStroke.Transparency = 0
+        else
+                tween(menuFrame, {Position = UDim2.new(-1, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+                tween(menuBtn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.3)
+                mStroke.Transparency = 0.8
+        end
 end
 menuBtn.MouseButton1Click:Connect(toggleMenu)
 UserInputService.InputBegan:Connect(function(input, gp)
