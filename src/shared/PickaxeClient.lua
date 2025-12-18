@@ -6,8 +6,19 @@ local PickaxeClient = {}
 
 function PickaxeClient.init(tool)
   if not tool or not tool:IsA("Tool") then
-    warn("[PickaxeClient] init expected a Tool, got", tool and tool.ClassName or "nil")
-    return
+    if typeof(tool) == "Instance" then
+      local recovered = tool:FindFirstAncestorWhichIsA("Tool")
+        or (tool:IsA("Folder") and tool:FindFirstChildWhichIsA("Tool"))
+
+      if recovered and recovered:IsA("Tool") then
+        tool = recovered
+      end
+    end
+
+    if not tool or not tool:IsA("Tool") then
+      warn("[PickaxeClient] init expected a Tool, got", tool and tool.ClassName or "nil")
+      return
+    end
   end
 
   local Players = game:GetService("Players")
