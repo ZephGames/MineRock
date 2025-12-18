@@ -39,8 +39,8 @@ local ShopCenter = Workspace:WaitForChild("ShopCenter") -- Ensure this part exis
 local SELL_RADIUS = 15 -- Distance to open shop
 local SHOP_HIDE_RADIUS = 30 -- Distance to auto-close shop UI
 local SELL_ANYWHERE_PASS_ID = 1631522468
-local SHOP_OVERLAY_TRANSPARENCY = 0.55 -- Reduce darkness over the world when shop is open
-local SHOP_PANEL_TRANSPARENCY = 0.35 -- Lighten the shop container panels
+local SHOP_OVERLAY_TRANSPARENCY = 1 -- Match menu brightness (no world darkening)
+local SHOP_PANEL_TRANSPARENCY = 0.15 -- Match menu panel brightness
 
 -- Devs who can use "!pass sell" locally (add any co-dev IDs here)
 local DEV_USER_IDS = {
@@ -509,7 +509,7 @@ shopFrame.Name = "ShopFrame"
 shopFrame.Size = UDim2.new(0.65, 0, 0.65, 0)
 shopFrame.Position = UDim2.new(0.5, 0, 1.5, 0) -- Hidden Bottom
 shopFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-shopFrame.BackgroundColor3 = Color3.fromRGB(12, 14, 20)
+shopFrame.BackgroundColor3 = THEME.Glass
 shopFrame.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
 shopFrame.BorderSizePixel = 0
 shopFrame.ZIndex = 6
