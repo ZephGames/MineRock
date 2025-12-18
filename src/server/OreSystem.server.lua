@@ -96,15 +96,6 @@ local function UpdateQuestSafe(player, questType, amount, oreType)
     end
 end
 
-local function addTotalMined(player, amount)
-	local ls = player:FindFirstChild("leaderstats")
-	if not ls then return end
-	local totalMined = ls:FindFirstChild("TotalMined")
-	if totalMined then
-		totalMined.Value = totalMined.Value + (amount or 1)
-	end
-end
-
 -- =========================
 -- Inventory & coins
 -- =========================
@@ -141,6 +132,23 @@ local function getOrCreateLeaderstats(player)
         ls.Parent = player
     end
     return ls
+end
+
+local function getOrCreateTotalMined(player)
+    local ls = getOrCreateLeaderstats(player)
+    local total = ls:FindFirstChild("TotalMined")
+    if not total then
+        total = Instance.new("IntValue")
+        total.Name = "TotalMined"
+        total.Value = 0
+        total.Parent = ls
+    end
+    return total
+end
+
+local function addTotalMined(player, amount)
+	local totalMined = getOrCreateTotalMined(player)
+	totalMined.Value = totalMined.Value + (amount or 1)
 end
 
 local function getOrCreateCoins(player)
@@ -884,6 +892,7 @@ MineRockEvent.OnServerEvent:Connect(onMineRock)
 -- =========================
 Players.PlayerAdded:Connect(function(player)
     getOrCreateCoins(player)
+    getOrCreateTotalMined(player)
     player:SetAttribute("MiningStreak", 0)
     player:SetAttribute("MiningMomentum", 1)
     player:SetAttribute("RecentShardGain", 0)

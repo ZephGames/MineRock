@@ -488,13 +488,17 @@ local upcomingLabels = {} -- Store frames to update them
 -- 6b. SHOP SYSTEM
 -- ==========================================
 
-local shopOverlay = Instance.new("Frame")
+local shopOverlay = Instance.new("TextButton")
 shopOverlay.Name = "ShopOverlay"
 shopOverlay.Size = UDim2.fromScale(1, 1)
 shopOverlay.BackgroundColor3 = Color3.fromRGB(6, 8, 12)
--- Remove dimming effect while keeping overlay for input capture
+shopOverlay.AutoButtonColor = false
+shopOverlay.BorderSizePixel = 0
 shopOverlay.BackgroundTransparency = 1
+shopOverlay.Modal = true
+shopOverlay.Text = ""
 shopOverlay.Visible = false
+shopOverlay.Active = false
 shopOverlay.ZIndex = 5
 shopOverlay.Parent = gui
 

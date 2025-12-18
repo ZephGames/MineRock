@@ -21,6 +21,18 @@ local function makeValue(className, name, parent, value)
 	return v
 end
 
+local function ensureValue(className, name, parent, value)
+	local existing = parent:FindFirstChild(name)
+	if existing and existing:IsA(className) then
+		existing.Value = value
+		return existing
+	end
+	if existing then
+		existing:Destroy()
+	end
+	return makeValue(className, name, parent, value)
+end
+
 local function loadData(player)
 	if not USE_DATASTORE then
 		return table.clone(DEFAULTS)
@@ -72,13 +84,19 @@ Players.PlayerAdded:Connect(function(player)
 	local data = loadData(player)
 
 	-- Leaderstats (shows on leaderboard)
-	local leaderstats = Instance.new("Folder")
-	leaderstats.Name = "leaderstats"
-	leaderstats.Parent = player
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if not leaderstats or not leaderstats:IsA("Folder") then
+		if leaderstats then
+			leaderstats:Destroy()
+		end
+		leaderstats = Instance.new("Folder")
+		leaderstats.Name = "leaderstats"
+		leaderstats.Parent = player
+	end
 
-	makeValue("IntValue", "Coins", leaderstats, data.Coins)
-	makeValue("IntValue", "Rebirths", leaderstats, data.Rebirths) -- keep even if you donâ€™t use it yet
-	makeValue("IntValue", "TotalMined", leaderstats, data.TotalMined)
+	ensureValue("IntValue", "Coins", leaderstats, data.Coins)
+	ensureValue("IntValue", "Rebirths", leaderstats, data.Rebirths) -- keep even if you don’t use it yet
+	ensureValue("IntValue", "TotalMined", leaderstats, data.TotalMined)
 
 	-- Quest values (NOT in leaderboard)
 	makeValue("StringValue", "ActiveQuest", player, "")
