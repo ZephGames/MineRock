@@ -51,7 +51,6 @@ local function isDevPlayer()
 	if RunService:IsStudio() then return true end
 	if DEV_USER_IDS[player.UserId] then return true end
 
-	-- Also allow place owner (user-owned games) or high-rank group members (group-owned games)
 	if game.CreatorType == Enum.CreatorType.User then
 		return player.UserId == game.CreatorId
 	elseif game.CreatorType == Enum.CreatorType.Group then
@@ -95,25 +94,24 @@ local function tween(obj, props, time, style, dir)
 end
 
 local function startRGBSpin(grad, speed)
-        local r = 0
-        RunService.RenderStepped:Connect(function(dt)
-                if grad.Parent then
-                        r = (r + dt * (speed or 45)) % 360
+	local r = 0
+	RunService.RenderStepped:Connect(function(dt)
+		if grad.Parent then
+			r = (r + dt * (speed or 45)) % 360
 			grad.Rotation = r
 		end
-        end)
+	end)
 end
 
 local function cycleRGBColor(frame, speed)
-        local hue = 0
-        RunService.RenderStepped:Connect(function(dt)
-                if not frame.Parent then return end
-                hue = (hue + dt * (speed or 0.2)) % 1
-                frame.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
-        end)
+	local hue = 0
+	RunService.RenderStepped:Connect(function(dt)
+		if not frame.Parent then return end
+		hue = (hue + dt * (speed or 0.2)) % 1
+		frame.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+	end)
 end
 
--- Used for Text RGB
 local function startTextColorSpin(textLabel)
 	local h = 0
 	RunService.RenderStepped:Connect(function(dt)
@@ -142,7 +140,6 @@ local function createStroke(p, color, thick, transp)
 	return s
 end
 
--- Updated: Stroke Transparency is 0 for maximum visibility of RGB
 local function createGlassPanel(parent, size, pos)
 	local frame = Instance.new("Frame")
 	frame.BackgroundColor3 = THEME.Glass
@@ -154,10 +151,7 @@ local function createGlassPanel(parent, size, pos)
 
 	createCorner(frame, 16)
 
-	-- The Stroke containing the RGB Gradient
 	local s = createStroke(frame, THEME.BorderDefault, 2.5, 0)
-
-	-- Add Rainbow Gradient to Panel Stroke
 	local g = Instance.new("UIGradient")
 	g.Color = THEME.Rainbow
 	g.Parent = s
@@ -179,19 +173,17 @@ local function createGlassButton(parent, text, size)
 	createCorner(btn, 12)
 	local stroke = createStroke(btn, THEME.BorderDefault, 1.5, 0.8)
 
-	-- Rainbow Gradient for Stroke (Hidden by default)
 	local gradient = Instance.new("UIGradient")
 	gradient.Color = THEME.Rainbow
 	gradient.Enabled = false
 	gradient.Parent = stroke
 	startRGBSpin(gradient)
 
-	-- Content Container
 	local content = Instance.new("Frame")
 	content.BackgroundTransparency = 1
 	content.Size = UDim2.new(1, 0, 1, 0)
 	content.Parent = btn
-	
+
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
 	label.Size = UDim2.new(1, 0, 1, 0)
@@ -199,42 +191,38 @@ local function createGlassButton(parent, text, size)
 	label.Font = Enum.Font.GothamBold
 	label.Text = text
 	label.TextColor3 = THEME.TextMain
-	label.TextSize = 18 -- Larger font
+	label.TextSize = 18
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.Parent = content
 
-        local hovering = false
-        btn:SetAttribute("IsHovering", false)
+	btn:SetAttribute("IsHovering", false)
 
-        local function applyBaseVisual()
-                local isSelected = btn:GetAttribute("Selected") == true
-                local bgTransparency = isSelected and 0.1 or 0.3
-                local bgColor = isSelected and THEME.GlassHover or THEME.Glass
-                tween(btn, {BackgroundTransparency = bgTransparency, BackgroundColor3 = bgColor}, 0.2)
-                stroke.Transparency = isSelected and 0 or 0.8
-                stroke.Thickness = isSelected and 2.5 or 1.5
-        end
+	local function applyBaseVisual()
+		local isSelected = btn:GetAttribute("Selected") == true
+		local bgTransparency = isSelected and 0.1 or 0.3
+		local bgColor = isSelected and THEME.GlassHover or THEME.Glass
+		tween(btn, {BackgroundTransparency = bgTransparency, BackgroundColor3 = bgColor}, 0.2)
+		stroke.Transparency = isSelected and 0 or 0.8
+		stroke.Thickness = isSelected and 2.5 or 1.5
+	end
 
-        -- Interaction
-        btn.MouseEnter:Connect(function()
-                if btn.Active then
-                        hovering = true
-                        btn:SetAttribute("IsHovering", true)
-                        tween(btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
-                        gradient.Enabled = true
-                        stroke.Transparency = 0
-                        stroke.Thickness = 2.5
-                        tween(content, {Size = UDim2.new(1.05, 0, 1.05, 0)}, 0.2)
-                end
-        end)
+	btn.MouseEnter:Connect(function()
+		if btn.Active then
+			btn:SetAttribute("IsHovering", true)
+			tween(btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
+			gradient.Enabled = true
+			stroke.Transparency = 0
+			stroke.Thickness = 2.5
+			tween(content, {Size = UDim2.new(1.05, 0, 1.05, 0)}, 0.2)
+		end
+	end)
 
-        btn.MouseLeave:Connect(function()
-                hovering = false
-                btn:SetAttribute("IsHovering", false)
-                gradient.Enabled = false
-                applyBaseVisual()
-                tween(content, {Size = UDim2.new(1, 0, 1, 0)}, 0.3)
-        end)
+	btn.MouseLeave:Connect(function()
+		btn:SetAttribute("IsHovering", false)
+		gradient.Enabled = false
+		applyBaseVisual()
+		tween(content, {Size = UDim2.new(1, 0, 1, 0)}, 0.3)
+	end)
 
 	btn.MouseButton1Down:Connect(function()
 		if btn.Active then
@@ -262,7 +250,6 @@ gui.Parent = playerGui
 -- 6a. MENU SYSTEM (Inventory / Quests)
 -- ==========================================
 
--- Trigger Button
 local menuTriggerFrame = Instance.new("Frame")
 menuTriggerFrame.Size = UDim2.new(0, 80, 0, 80)
 menuTriggerFrame.Position = UDim2.new(0, 20, 0.5, -40)
@@ -274,11 +261,10 @@ mLabel.TextSize = 22
 
 local isMenuOpen = false
 
--- Menu Main Frame (Off-screen start)
 local menuFrame = Instance.new("Frame")
 menuFrame.Name = "MenuFrame"
-menuFrame.Size = UDim2.new(0.7, 0, 0.7, 0) -- Slightly Larger
-menuFrame.Position = UDim2.new(-1, 0, 0.5, 0) -- Hidden Left
+menuFrame.Size = UDim2.new(0.7, 0, 0.7, 0)
+menuFrame.Position = UDim2.new(-1, 0, 0.5, 0)
 menuFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 menuFrame.BackgroundTransparency = 1
 menuFrame.Parent = gui
@@ -286,7 +272,6 @@ menuFrame.Parent = gui
 local menuScale = Instance.new("UIScale")
 menuScale.Parent = menuFrame
 
--- Sidebar (Left)
 local menuSidebar = createGlassPanel(menuFrame, UDim2.new(0.25, -15, 1, 0), UDim2.new(0, 0, 0, 0))
 local sidebarLayout = Instance.new("UIListLayout")
 sidebarLayout.Padding = UDim.new(0, 10)
@@ -305,7 +290,6 @@ menuTitle.BackgroundTransparency = 1
 menuTitle.Size = UDim2.new(1,0,0,50)
 menuTitle.Parent = menuSidebar
 
--- Content (Right)
 local menuContent = createGlassPanel(menuFrame, UDim2.new(0.75, 0, 1, 0), UDim2.new(0.25, 15, 0, 0))
 local contentPad = Instance.new("UIPadding")
 contentPad.PaddingTop = UDim.new(0, 20)
@@ -314,7 +298,6 @@ contentPad.PaddingLeft = UDim.new(0, 20)
 contentPad.PaddingRight = UDim.new(0, 20)
 contentPad.Parent = menuContent
 
--- Tabs Logic
 local menuTabs = {}
 local menuPages = {}
 
@@ -330,21 +313,21 @@ local function createMenuPage(name)
 end
 
 local function switchMenuTab(name)
-	for n, p in pairs(menuPages) do p.Visible = false end
+	for _, p in pairs(menuPages) do p.Visible = false end
 	for n, data in pairs(menuTabs) do
-                local isMe = (n == name)
-                data.Btn:SetAttribute("Selected", isMe)
-                local isHovering = data.Btn:GetAttribute("IsHovering") == true
-                if isMe then
-                        tween(data.Btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
-                        data.Stroke.Transparency = 0
-                        data.Grad.Enabled = isHovering
-                else
-                        tween(data.Btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
-                        data.Stroke.Transparency = 0.8
-                        data.Grad.Enabled = isHovering
-                end
-        end
+		local isMe = (n == name)
+		data.Btn:SetAttribute("Selected", isMe)
+		local isHovering = data.Btn:GetAttribute("IsHovering") == true
+		if isMe then
+			tween(data.Btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
+			data.Stroke.Transparency = 0
+			data.Grad.Enabled = isHovering
+		else
+			tween(data.Btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
+			data.Stroke.Transparency = 0.8
+			data.Grad.Enabled = isHovering
+		end
+	end
 	if menuPages[name] then
 		menuPages[name].Visible = true
 		menuPages[name].Position = UDim2.new(0,0,0.05,0)
@@ -363,7 +346,6 @@ end
 local invPage = addMenuTab("Inventory")
 local questPage = addMenuTab("Quests")
 
--- Inventory Page Content (3x3 Grid, Fixed Sizing)
 local invScroll = Instance.new("Frame")
 invScroll.BackgroundTransparency = 1
 invScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -371,7 +353,7 @@ invScroll.Parent = invPage
 
 local invGrid = Instance.new("UIGridLayout")
 invGrid.CellPadding = UDim2.new(0.02, 0, 0.02, 0)
-invGrid.CellSize = UDim2.new(0.32, 0, 0.31, 0) -- Fits 3x3 perfectly
+invGrid.CellSize = UDim2.new(0.32, 0, 0.31, 0)
 invGrid.FillDirection = Enum.FillDirection.Horizontal
 invGrid.SortOrder = Enum.SortOrder.LayoutOrder
 invGrid.Parent = invScroll
@@ -387,10 +369,9 @@ for i, oreName in ipairs(oreNames) do
 	createCorner(slot, 12)
 	createStroke(slot, THEME.BorderDefault, 1, 0.9)
 
-	-- BIG IMAGE (Left)
 	local img = Instance.new("ImageLabel")
 	img.BackgroundTransparency = 1
-	img.Size = UDim2.new(0.65, 0, 0.65, 0) -- Adjusted size
+	img.Size = UDim2.new(0.65, 0, 0.65, 0)
 	img.SizeConstraint = Enum.SizeConstraint.RelativeYY
 	img.AnchorPoint = Vector2.new(0, 0.5)
 	img.Position = UDim2.new(0.05, 0, 0.5, 0)
@@ -398,7 +379,6 @@ for i, oreName in ipairs(oreNames) do
 	img.ScaleType = Enum.ScaleType.Fit
 	img.Parent = slot
 
-	-- AMOUNT (Right Top)
 	local amt = Instance.new("TextLabel")
 	amt.Text = "0"
 	amt.Font = Enum.Font.GothamBlack
@@ -411,7 +391,6 @@ for i, oreName in ipairs(oreNames) do
 	amt.TextYAlignment = Enum.TextYAlignment.Bottom
 	amt.Parent = slot
 
-	-- NAME (Right Bottom - Below Number)
 	local name = Instance.new("TextLabel")
 	name.Text = cfg.DisplayName or oreName
 	name.Font = Enum.Font.GothamBold
@@ -427,7 +406,6 @@ for i, oreName in ipairs(oreNames) do
 	invSlots[oreName] = amt
 end
 
--- Quests Page Content (Current + Next)
 local qTitle = Instance.new("TextLabel")
 qTitle.Text = "CURRENT MISSION"
 qTitle.Font = Enum.Font.GothamBlack
@@ -473,7 +451,6 @@ qProgressText.BackgroundTransparency = 1
 qProgressText.Size = UDim2.new(1,0,1,0)
 qProgressText.Parent = barBg
 
--- UPCOMING QUESTS SECTION
 local nextQTitle = Instance.new("TextLabel")
 nextQTitle.Text = "UPCOMING"
 nextQTitle.Font = Enum.Font.GothamBold
@@ -498,7 +475,7 @@ local nextQLayout = Instance.new("UIListLayout")
 nextQLayout.Padding = UDim.new(0, 8)
 nextQLayout.Parent = nextQScroll
 
-local upcomingLabels = {} -- Store frames to update them
+local upcomingLabels = {}
 
 -- ==========================================
 -- 6b. SHOP SYSTEM
@@ -521,7 +498,7 @@ shopOverlay.Parent = gui
 local shopFrame = Instance.new("Frame")
 shopFrame.Name = "ShopFrame"
 shopFrame.Size = UDim2.new(0.7, 0, 0.7, 0)
-shopFrame.Position = UDim2.new(0.5, 0, 1.5, 0) -- Hidden Bottom
+shopFrame.Position = UDim2.new(0.5, 0, 1.5, 0)
 shopFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 shopFrame.BackgroundTransparency = 1
 shopFrame.ZIndex = 6
@@ -530,41 +507,39 @@ shopFrame.Parent = shopOverlay
 local shopScale = Instance.new("UIScale")
 shopScale.Parent = shopFrame
 
--- Shared UI scale handler (keeps layout consistent across resolutions)
 local BASE_RESOLUTION = Vector2.new(1920, 1080)
 local MIN_UI_SCALE, MAX_UI_SCALE = 0.85, 1
 
 local function updateUiScale()
-        local cam = Workspace.CurrentCamera
-        if not cam then return end
+	local cam = Workspace.CurrentCamera
+	if not cam then return end
 
-        local viewport = cam.ViewportSize
-        local ratio = math.min(viewport.X / BASE_RESOLUTION.X, viewport.Y / BASE_RESOLUTION.Y)
-        local scale = math.clamp(ratio, MIN_UI_SCALE, MAX_UI_SCALE)
+	local viewport = cam.ViewportSize
+	local ratio = math.min(viewport.X / BASE_RESOLUTION.X, viewport.Y / BASE_RESOLUTION.Y)
+	local scale = math.clamp(ratio, MIN_UI_SCALE, MAX_UI_SCALE)
 
-        menuScale.Scale = scale
-        shopScale.Scale = scale
+	menuScale.Scale = scale
+	shopScale.Scale = scale
 end
 
 local function attachViewportListener()
-        local function hookCamera(cam)
-                if not cam then return end
-                cam:GetPropertyChangedSignal("ViewportSize"):Connect(updateUiScale)
-                updateUiScale()
-        end
+	local function hookCamera(cam)
+		if not cam then return end
+		cam:GetPropertyChangedSignal("ViewportSize"):Connect(updateUiScale)
+		updateUiScale()
+	end
 
-        if Workspace.CurrentCamera then
-                hookCamera(Workspace.CurrentCamera)
-        end
+	if Workspace.CurrentCamera then
+		hookCamera(Workspace.CurrentCamera)
+	end
 
-        Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-                hookCamera(Workspace.CurrentCamera)
-        end)
+	Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+		hookCamera(Workspace.CurrentCamera)
+	end)
 end
 
 attachViewportListener()
 
--- Shop Sidebar (Left)
 local shopSidebar = createGlassPanel(shopFrame, UDim2.new(0.25, -15, 1, 0), UDim2.new(0, 0, 0, 0))
 shopSidebar.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
 local shopSidebarLayout = Instance.new("UIListLayout")
@@ -575,7 +550,6 @@ local shopSidebarPad = Instance.new("UIPadding")
 shopSidebarPad.PaddingTop = UDim.new(0, 20)
 shopSidebarPad.Parent = shopSidebar
 
--- Shop Title Area
 local shopTitleFrame = Instance.new("Frame")
 shopTitleFrame.Size = UDim2.new(1, 0, 0, 90)
 shopTitleFrame.BackgroundTransparency = 1
@@ -611,35 +585,60 @@ shopCoins.Size = UDim2.new(1,0,0,20)
 shopCoins.Position = UDim2.new(0,0,0,54)
 shopCoins.Parent = shopTitleFrame
 
--- Shop Tabs Logic (using buttons in sidebar)
 local shopTabBtns = {}
 local shopPages = {}
+
+-- FIX 1: Make updateShopButtons a real local function (no shadowing bug)
 local updateShopButtons
 
 local function switchShopTab(name)
-        for n, p in pairs(shopPages) do p.Visible = false end
-        for n, data in pairs(shopTabBtns) do
-                local isMe = (n == name)
-                data.Btn:SetAttribute("Selected", isMe)
-                local isHovering = data.Btn:GetAttribute("IsHovering") == true
-                if isMe then
-                        tween(data.Btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
-                        data.Stroke.Transparency = 0
-                        data.Grad.Enabled = isHovering
-                else
-                        tween(data.Btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
-                        data.Stroke.Transparency = 0.8
-                        data.Grad.Enabled = isHovering
-                end
-        end
-        if shopPages[name] then
-                shopPages[name].Visible = true
-                shopPages[name].Position = UDim2.new(0,0,0.05,0)
-                tween(shopPages[name], {Position = UDim2.new(0,0,0,0)}, 0.3, Enum.EasingStyle.Back)
-        end
+	-- Hide all pages
+	for _, p in pairs(shopPages) do
+		p.Visible = false
+	end
+
+	-- Button visuals
+	for n, data in pairs(shopTabBtns) do
+		local isMe = (n == name)
+		data.Btn:SetAttribute("Selected", isMe)
+		local isHovering = data.Btn:GetAttribute("IsHovering") == true
+		if isMe then
+			tween(data.Btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
+			data.Stroke.Transparency = 0
+			data.Grad.Enabled = isHovering
+		else
+			tween(data.Btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
+			data.Stroke.Transparency = 0.8
+			data.Grad.Enabled = isHovering
+		end
+	end
+
+	-- FIX 2: Force correct layering so Sell page stuff can't sit on top
+	for _, p in pairs(shopPages) do
+		p.ZIndex = 1
+		for _, d in ipairs(p:GetDescendants()) do
+			if d:IsA("GuiObject") then
+				d.ZIndex = 1
+			end
+		end
+	end
+
+	-- Show target page
+	if shopPages[name] then
+		local page = shopPages[name]
+		page.Visible = true
+		page.ZIndex = 2
+		for _, d in ipairs(page:GetDescendants()) do
+			if d:IsA("GuiObject") then
+				d.ZIndex = 2
+			end
+		end
+
+		page.Position = UDim2.new(0,0,0.05,0)
+		tween(page, {Position = UDim2.new(0,0,0,0)}, 0.3, Enum.EasingStyle.Back)
+	end
 end
 
--- Shop Content (Right)
 local shopContent = createGlassPanel(shopFrame, UDim2.new(0.75, 0, 1, 0), UDim2.new(0.25, 15, 0, 0))
 shopContent.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
 local shopContentPad = Instance.new("UIPadding")
@@ -649,13 +648,11 @@ shopContentPad.PaddingLeft = UDim.new(0, 20)
 shopContentPad.PaddingRight = UDim.new(0, 20)
 shopContentPad.Parent = shopContent
 
--- Create Tab Buttons in Sidebar
 local btnSell, sStroke, sGrad = createGlassButton(shopSidebar, "Sell Ores", UDim2.new(0.9, 0, 0, 50))
 shopTabBtns["Sell"] = {Btn = btnSell, Stroke = sStroke, Grad = sGrad}
 local btnPicks, pStroke, pGrad = createGlassButton(shopSidebar, "Pickaxes", UDim2.new(0.9, 0, 0, 50))
 shopTabBtns["Pickaxes"] = {Btn = btnPicks, Stroke = pStroke, Grad = pGrad}
 
--- Pages
 local sellPageFrame = Instance.new("Frame")
 sellPageFrame.BackgroundTransparency = 1
 sellPageFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -664,7 +661,7 @@ shopPages["Sell"] = sellPageFrame
 
 local sellView = Instance.new("ScrollingFrame")
 sellView.BackgroundTransparency = 1
-sellView.Size = UDim2.new(1, -12, 1, -60) -- Leave space for Sell button at bottom, and scrollbar
+sellView.Size = UDim2.new(1, -12, 1, -60)
 sellView.ScrollBarThickness = 4
 sellView.AutomaticCanvasSize = Enum.AutomaticSize.Y
 sellView.Parent = sellPageFrame
@@ -685,38 +682,46 @@ shopPages["Pickaxes"] = pickPageFrame
 
 local pickView = Instance.new("ScrollingFrame")
 pickView.BackgroundTransparency = 1
-pickView.Size = UDim2.new(1, -12, 1, 0)
+pickView.Size = UDim2.new(1, -12, 1, -10) -- small safety padding
 pickView.ScrollBarThickness = 4
 pickView.AutomaticCanvasSize = Enum.AutomaticSize.Y
 pickView.Parent = pickPageFrame
 
 local function openPickaxeTab()
-        switchShopTab("Pickaxes")
-        updateShopButtons()
+	print("PICKAXES CLICKED")
+	print("Before:", "Sell", sellPageFrame.Visible, "Pickaxes", pickPageFrame.Visible)
+
+	-- Hard force to test (bypasses any tab logic)
+	sellPageFrame.Visible = false
+	pickPageFrame.Visible = true
+
+	print("After:", "Sell", sellPageFrame.Visible, "Pickaxes", pickPageFrame.Visible)
+	if updateShopButtons then updateShopButtons() end
 end
 
 local function openSellTab()
-        switchShopTab("Sell")
+	print("SELL CLICKED")
+	print("Before:", "Sell", sellPageFrame.Visible, "Pickaxes", pickPageFrame.Visible)
+
+	pickPageFrame.Visible = false
+	sellPageFrame.Visible = true
+
+	print("After:", "Sell", sellPageFrame.Visible, "Pickaxes", pickPageFrame.Visible)
 end
 
 btnSell.MouseButton1Click:Connect(openSellTab)
-btnSell.Activated:Connect(openSellTab)
 btnPicks.MouseButton1Click:Connect(openPickaxeTab)
-btnPicks.Activated:Connect(openPickaxeTab)
 
--- Default to Sell tab on first load so pages have a consistent state
 switchShopTab("Sell")
 
--- Close Button (Absolute positioned on ShopFrame to overlap right corner)
 local shopCloseBtn, scStroke, scGrad, scLbl = createGlassButton(shopFrame, "X", UDim2.new(0, 40, 0, 40))
-shopCloseBtn.Position = UDim2.new(1, -25, 0, -15) -- Top Right Corner
+shopCloseBtn.Position = UDim2.new(1, -25, 0, -15)
 shopCloseBtn.ZIndex = 10
 scLbl.TextSize = 22
 
 local isShopOpen = false
 local suppressShopAutoOpen = false
 
--- SELL VIEW CONTENT
 local sellLayout = Instance.new("UIListLayout")
 sellLayout.Padding = UDim.new(0, 5)
 sellLayout.Parent = sellView
@@ -725,13 +730,12 @@ for _, oreName in ipairs(oreNames) do
 	local cfg = OreConfig[oreName]
 	local row = Instance.new("Frame")
 	row.BackgroundColor3 = THEME.Glass
-        row.BackgroundTransparency = 0.35
-        row.Size = UDim2.new(1, 0, 0, 64) -- Slightly taller
-        row.Parent = sellView
-        createCorner(row, 8)
-        createStroke(row, THEME.BorderDefault, 1, 0.7)
+	row.BackgroundTransparency = 0.35
+	row.Size = UDim2.new(1, 0, 0, 64)
+	row.Parent = sellView
+	createCorner(row, 8)
+	createStroke(row, THEME.BorderDefault, 1, 0.7)
 
-	-- ADDED ORE IMAGE
 	local img = Instance.new("ImageLabel")
 	img.BackgroundTransparency = 1
 	img.Size = UDim2.new(0, 45, 0, 45)
@@ -742,27 +746,26 @@ for _, oreName in ipairs(oreNames) do
 	local lbl = Instance.new("TextLabel")
 	lbl.Text = cfg.DisplayName or oreName
 	lbl.Font = Enum.Font.GothamBold
-        lbl.TextSize = 19
-        lbl.TextColor3 = THEME.TextMain
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Size = UDim2.new(0.4, 0, 1, 0)
-	lbl.Position = UDim2.new(0, 65, 0, 0) -- Shifted right
+	lbl.TextSize = 19
+	lbl.TextColor3 = THEME.TextMain
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Size = UDim2.new(0.4, 0, 1, 0)
+	lbl.Position = UDim2.new(0, 65, 0, 0)
 	lbl.BackgroundTransparency = 1
 	lbl.Parent = row
 
 	local val = Instance.new("TextLabel")
-        val.Text = "Value: " .. (cfg.Value or 0)
-        val.Font = Enum.Font.GothamSemibold
-        val.TextSize = 18
-        val.TextColor3 = THEME.AccentGreen
-        val.TextXAlignment = Enum.TextXAlignment.Right
-        val.Size = UDim2.new(0.4, 0, 1, 0) -- Reduced width to pull away from edge
-        val.Position = UDim2.new(0.55, 0, 0, 0) -- Shifted left
+	val.Text = "Value: " .. (cfg.Value or 0)
+	val.Font = Enum.Font.GothamSemibold
+	val.TextSize = 18
+	val.TextColor3 = THEME.AccentGreen
+	val.TextXAlignment = Enum.TextXAlignment.Right
+	val.Size = UDim2.new(0.4, 0, 1, 0)
+	val.Position = UDim2.new(0.55, 0, 0, 0)
 	val.BackgroundTransparency = 1
 	val.Parent = row
 end
 
--- SELL ALL BUTTON (At bottom of Sell Page, NOT sidebar)
 local sellAllBtn, saStroke, saGrad, saLbl = createGlassButton(sellPageFrame, "SELL ALL", UDim2.new(1, 0, 0, 50))
 sellAllBtn.Position = UDim2.new(0, 0, 1, -50)
 sellAllBtn.BackgroundColor3 = THEME.AccentGreen
@@ -778,12 +781,10 @@ sellAllBtn.MouseButton1Click:Connect(function()
 	saLbl.Text = "SELL ALL"
 end)
 
--- PICKAXES CONTENT
 local pickLayout = Instance.new("UIListLayout")
 pickLayout.Padding = UDim.new(0, 10)
 pickLayout.Parent = pickView
 
--- Add padding to bottom of pickaxe view so last item isn't cut off
 local pickPad = Instance.new("UIPadding")
 pickPad.PaddingBottom = UDim.new(0, 10)
 pickPad.Parent = pickView
@@ -791,35 +792,33 @@ pickPad.Parent = pickView
 local pickaxeUI = {}
 
 local function canPurchaseTier(targetTierIndex)
-        local leaderstats = player:FindFirstChild("leaderstats")
-        local coinsValue = leaderstats and leaderstats:FindFirstChild("Coins")
-        local coins = coinsValue and coinsValue.Value or 0
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local coinsValue = leaderstats and leaderstats:FindFirstChild("Coins")
+	local coins = coinsValue and coinsValue.Value or 0
 
-        local tierVal = player:FindFirstChild("PickaxeTier")
-        local currentTier = tierVal and tierVal.Value or 1
+	local tierVal = player:FindFirstChild("PickaxeTier")
+	local currentTier = tierVal and tierVal.Value or 1
 
-        local targetConfig = PickaxeTiers[targetTierIndex] or {}
-        local cost = targetConfig.Cost or 0
+	local targetConfig = PickaxeTiers[targetTierIndex] or {}
+	local cost = targetConfig.Cost or 0
 
-        local isNextTier = targetTierIndex == currentTier + 1
-        return isNextTier and coins >= cost, coins, currentTier, cost
+	local isNextTier = targetTierIndex == currentTier + 1
+	return isNextTier and coins >= cost, coins, currentTier, cost
 end
 
 for idx, tool in ipairs(PickaxeTiers) do
 	local row = Instance.new("Frame")
 	row.BackgroundColor3 = THEME.Glass
 	row.BackgroundTransparency = 0.3
-	row.Size = UDim2.new(1, -10, 0, 100) -- Taller to fit image
+	row.Size = UDim2.new(1, -10, 0, 100)
 	row.Parent = pickView
 	createCorner(row, 12)
 	createStroke(row, THEME.BorderDefault, 1, 0.8)
 
-	-- IMAGE
 	local img = Instance.new("ImageLabel")
 	img.BackgroundTransparency = 1
 	img.Size = UDim2.new(0, 80, 0, 80)
 	img.Position = UDim2.new(0, 10, 0.5, -40)
-	-- Placeholder image if none in config, or use tool.Image
 	img.Image = tool.Image or "rbxassetid://0"
 	img.Parent = row
 
@@ -834,7 +833,6 @@ for idx, tool in ipairs(PickaxeTiers) do
 	name.TextXAlignment = Enum.TextXAlignment.Left
 	name.Parent = row
 
-	-- Special RGB for Obsidian
 	if (tool.Name and string.find(tool.Name, "Obsidian")) or tool.RainbowGlow then
 		startTextColorSpin(name)
 	end
@@ -853,31 +851,27 @@ for idx, tool in ipairs(PickaxeTiers) do
 	local buyBtn, bStroke, bGrad, bLbl = createGlassButton(row, "...", UDim2.new(0, 140, 0, 50))
 	buyBtn.Position = UDim2.new(1, -150, 0.5, -25)
 
-        buyBtn.MouseButton1Click:Connect(function()
-                local canBuy = canPurchaseTier(idx)
-
-                if canBuy then
-                        RequestPickaxeUpgradeEvent:FireServer(idx)
-                else
-                        -- Quick feedback pulse when the button isn't eligible
-                        tween(buyBtn, {BackgroundColor3 = THEME.Locked}, 0.08)
-                        task.delay(0.1, function()
-                                updateShopButtons()
-                        end)
-                end
-        end)
+	buyBtn.MouseButton1Click:Connect(function()
+		local canBuy = canPurchaseTier(idx)
+		if canBuy then
+			RequestPickaxeUpgradeEvent:FireServer(idx)
+		else
+			tween(buyBtn, {BackgroundColor3 = THEME.Locked}, 0.08)
+			task.delay(0.1, function()
+				if updateShopButtons then updateShopButtons() end
+			end)
+		end
+	end)
 
 	pickaxeUI[idx] = {Btn = buyBtn, Lbl = bLbl, Cost = tool.Cost or 0}
 end
 
 -- // 7. LOGIC & UPDATERS //
 
--- Inventory Updater
 InventoryUpdateEvent.OnClientEvent:Connect(function(oreType, newAmount)
 	if invSlots[oreType] then invSlots[oreType].Text = "x"..tostring(newAmount) end
 end)
 
--- Quest Updater Logic
 local function updateQuest()
 	local aQ = player:WaitForChild("ActiveQuest", 5)
 	local qP = player:WaitForChild("QuestProgress", 5)
@@ -888,7 +882,6 @@ local function updateQuest()
 	local activeIdx = 0
 	local qData = nil
 
-	-- Find Active
 	for i, q in ipairs(QuestConfig) do
 		if q.Id == qId then
 			qData = q
@@ -897,7 +890,6 @@ local function updateQuest()
 		end
 	end
 
-	-- Update Current
 	if qData then
 		qDesc.Text = qData.Text
 		local pct = math.clamp(prog/qData.Target, 0, 1)
@@ -909,7 +901,6 @@ local function updateQuest()
 		tween(barFill, {Size = UDim2.new(0, 0, 1, 0)}, 0.5)
 	end
 
-	-- Update Upcoming (Grayed Out)
 	for _, l in ipairs(upcomingLabels) do l:Destroy() end
 	table.clear(upcomingLabels)
 
@@ -925,7 +916,7 @@ local function updateQuest()
 			lbl.Text = nextQ.Text
 			lbl.Font = Enum.Font.GothamMedium
 			lbl.TextSize = 18
-			lbl.TextColor3 = THEME.Locked -- Grayed out
+			lbl.TextColor3 = THEME.Locked
 			lbl.BackgroundTransparency = 1
 			lbl.Size = UDim2.new(1, 0, 1, 0)
 			lbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -952,55 +943,58 @@ if player:FindFirstChild("ActiveQuest") then
 	task.delay(1, updateQuest)
 end
 
--- Pickaxe Button Updater
-function updateShopButtons()
-        local canBuy, coins, currentTier
+-- FIX 1 continued: define the local updater properly
+updateShopButtons = function()
+	local coins
+	local currentTier
 
-        -- Update coin label based on latest values
-        local leaderstats = player:FindFirstChild("leaderstats")
-        local coinsValue = leaderstats and leaderstats:FindFirstChild("Coins")
-        coins = coinsValue and coinsValue.Value or 0
-        shopCoins.Text = "Coins: " .. coins
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local coinsValue = leaderstats and leaderstats:FindFirstChild("Coins")
+	coins = coinsValue and coinsValue.Value or 0
+	shopCoins.Text = "Coins: " .. coins
 
-        local tierVal = player:FindFirstChild("PickaxeTier")
-        currentTier = tierVal and tierVal.Value or 1
+	local tierVal = player:FindFirstChild("PickaxeTier")
+	currentTier = tierVal and tierVal.Value or 1
 
-        for idx, data in pairs(pickaxeUI) do
-                local btn = data.Btn
-                local lbl = data.Lbl
-                local cost = data.Cost
+	for idx, data in pairs(pickaxeUI) do
+		local btn = data.Btn
+		local lbl = data.Lbl
+		local cost = data.Cost
 
-                local isNextTier = (idx == currentTier + 1)
-                canBuy = canPurchaseTier(idx)
+		local isNextTier = (idx == currentTier + 1)
+		local canBuy = canPurchaseTier(idx)
 
-                if idx < currentTier then
-                        lbl.Text = "Owned"
-                        btn.BackgroundColor3 = THEME.Locked
-                        btn.Active = false
-                elseif idx == currentTier then
-                        lbl.Text = "Equipped"
-                        btn.BackgroundColor3 = THEME.AccentGreen
-                        btn.Active = false
-                elseif isNextTier then
-                        lbl.Text = "Buy ("..cost..")"
-                        if canBuy then
-                                btn.BackgroundColor3 = THEME.AccentBlue
-                                btn.Active = true
-                        else
-                                btn.BackgroundColor3 = THEME.Locked
-                                btn.Active = false
-                        end
-                else
-                        lbl.Text = "Locked"
-                        btn.BackgroundColor3 = THEME.Locked
-                        btn.Active = false
-                end
-        end
+		if idx < currentTier then
+			lbl.Text = "Owned"
+			btn.BackgroundColor3 = THEME.Locked
+			btn.Active = false
+		elseif idx == currentTier then
+			lbl.Text = "Equipped"
+			btn.BackgroundColor3 = THEME.AccentGreen
+			btn.Active = false
+		elseif isNextTier then
+			lbl.Text = "Buy ("..cost..")"
+			if canBuy then
+				btn.BackgroundColor3 = THEME.AccentBlue
+				btn.Active = true
+			else
+				btn.BackgroundColor3 = THEME.Locked
+				btn.Active = false
+			end
+		else
+			lbl.Text = "Locked"
+			btn.BackgroundColor3 = THEME.Locked
+			btn.Active = false
+		end
+	end
 end
 
 task.spawn(function()
 	local ls = player:WaitForChild("leaderstats", 10)
-	if ls then ls:WaitForChild("Coins", 10).Changed:Connect(updateShopButtons) end
+	if ls then
+		local c = ls:WaitForChild("Coins", 10)
+		if c then c.Changed:Connect(updateShopButtons) end
+	end
 	local pt = player:WaitForChild("PickaxeTier", 10)
 	if pt then pt.Changed:Connect(updateShopButtons) end
 	updateShopButtons()
@@ -1008,49 +1002,51 @@ end)
 
 -- // 8. VISIBILITY CONTROLS //
 
--- Toggle Main Menu (Inventory/Quests)
 local function toggleMenu()
 	isMenuOpen = not isMenuOpen
-        if isMenuOpen then
-                local targetPos = UDim2.new(0.5, 0, 0.5, 0)
-                tween(menuFrame, {Position = targetPos}, 0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-                tween(menuBtn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.3)
-                mStroke.Transparency = 0
-        else
-                tween(menuFrame, {Position = UDim2.new(-1, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-                tween(menuBtn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.3)
-                mStroke.Transparency = 0.8
-        end
+	if isMenuOpen then
+		local targetPos = UDim2.new(0.5, 0, 0.5, 0)
+		tween(menuFrame, {Position = targetPos}, 0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+		tween(menuBtn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.3)
+		mStroke.Transparency = 0
+	else
+		tween(menuFrame, {Position = UDim2.new(-1, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+		tween(menuBtn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.3)
+		mStroke.Transparency = 0.8
+	end
 end
 menuBtn.MouseButton1Click:Connect(toggleMenu)
+
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp then return end
-	if input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.Tab then toggleMenu() end
+	if input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.Tab then
+		toggleMenu()
+	end
 end)
 
--- Toggle Shop Logic
 local function toggleShop(forceOpen)
-        if forceOpen ~= nil then isShopOpen = forceOpen else isShopOpen = not isShopOpen end
+	if forceOpen ~= nil then isShopOpen = forceOpen else isShopOpen = not isShopOpen end
 
-        if isShopOpen then
-                suppressShopAutoOpen = false
-                shopOverlay.Visible = true
-                shopOverlay.Active = true
-                shopOverlay.BackgroundTransparency = SHOP_OVERLAY_TRANSPARENCY
-                tween(shopFrame, {Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        else
-                tween(shopFrame, {Position = UDim2.new(0.5, 0, 1.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-                task.delay(0.5, function()
-                        if not isShopOpen then
-                                shopOverlay.Visible = false
-                                shopOverlay.Active = false
-                        end
-                end)
-        end
+	if isShopOpen then
+		suppressShopAutoOpen = false
+		shopOverlay.Visible = true
+		shopOverlay.Active = true
+		shopOverlay.BackgroundTransparency = SHOP_OVERLAY_TRANSPARENCY
+		tween(shopFrame, {Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	else
+		tween(shopFrame, {Position = UDim2.new(0.5, 0, 1.5, 0)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+		task.delay(0.5, function()
+			if not isShopOpen then
+				shopOverlay.Visible = false
+				shopOverlay.Active = false
+			end
+		end)
+	end
 end
+
 shopCloseBtn.MouseButton1Click:Connect(function()
-        suppressShopAutoOpen = true
-        toggleShop(false)
+	suppressShopAutoOpen = true
+	toggleShop(false)
 end)
 
 -- =========================================================
@@ -1058,12 +1054,10 @@ end)
 -- =========================================================
 
 local hasSellPass = false
-
 local menuSellBtn = nil
 local menuSellLbl = nil
 
 local function updateMenuSellBtn()
-	-- Only exists when hasSellPass is true
 	if not hasSellPass then
 		if menuSellBtn then
 			menuSellBtn:Destroy()
@@ -1096,7 +1090,6 @@ local function updateMenuSellBtn()
 end
 
 local function checkPass()
-	-- If ForceSellAnywhere attribute exists (true/false), it overrides the real pass
 	local override = player:GetAttribute("ForceSellAnywhere")
 	if override ~= nil then
 		hasSellPass = (override == true)
@@ -1118,13 +1111,11 @@ player:GetAttributeChangedSignal("ForceSellAnywhere"):Connect(function()
 	checkPass()
 end)
 
--- Dev chat toggle: "!pass sell"
 player.Chatted:Connect(function(msg)
 	msg = string.lower(tostring(msg or ""))
 	if msg == "!pass sell" or msg == "!pass sellanywhere" then
 		if isDevPlayer() then
 			local cur = player:GetAttribute("ForceSellAnywhere")
-			-- Toggle strictly between true/false (so you can enable OR disable)
 			if cur == true then
 				player:SetAttribute("ForceSellAnywhere", false)
 			else
@@ -1134,7 +1125,6 @@ player.Chatted:Connect(function(msg)
 	end
 end)
 
--- Shop Proximity Loop
 task.spawn(function()
 	while true do
 		task.wait(0.5)
@@ -1155,7 +1145,6 @@ task.spawn(function()
 	end
 end)
 
--- Responsive Scaling
 local function updateScale()
 	local vp = Workspace.CurrentCamera.ViewportSize
 	local base = 1080
