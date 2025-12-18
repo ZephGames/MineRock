@@ -770,6 +770,21 @@ pickPad.Parent = pickView
 
 local pickaxeUI = {}
 
+local function canPurchaseTier(targetTierIndex)
+        local leaderstats = player:FindFirstChild("leaderstats")
+        local coinsValue = leaderstats and leaderstats:FindFirstChild("Coins")
+        local coins = coinsValue and coinsValue.Value or 0
+
+        local tierVal = player:FindFirstChild("PickaxeTier")
+        local currentTier = tierVal and tierVal.Value or 1
+
+        local targetConfig = PickaxeTiers[targetTierIndex] or {}
+        local cost = targetConfig.Cost or 0
+
+        local isNextTier = targetTierIndex == currentTier + 1
+        return isNextTier and coins >= cost, coins, currentTier, cost
+end
+
 for idx, tool in ipairs(PickaxeTiers) do
 	local row = Instance.new("Frame")
 	row.BackgroundColor3 = THEME.Glass
@@ -818,11 +833,19 @@ for idx, tool in ipairs(PickaxeTiers) do
 	local buyBtn, bStroke, bGrad, bLbl = createGlassButton(row, "...", UDim2.new(0, 140, 0, 50))
 	buyBtn.Position = UDim2.new(1, -150, 0.5, -25)
 
-	buyBtn.MouseButton1Click:Connect(function()
-		if buyBtn.Active then
-			RequestPickaxeUpgradeEvent:FireServer(idx)
-		end
-	end)
+        buyBtn.MouseButton1Click:Connect(function()
+                local canBuy = canPurchaseTier(idx)
+
+                if canBuy then
+                        RequestPickaxeUpgradeEvent:FireServer(idx)
+                else
+                        -- Quick feedback pulse when the button isn't eligible
+                        tween(buyBtn, {BackgroundColor3 = THEME.Locked}, 0.08)
+                        task.delay(0.1, function()
+                                updateShopButtons()
+                        end)
+                end
+        end)
 
 	pickaxeUI[idx] = {Btn = buyBtn, Lbl = bLbl, Cost = tool.Cost or 0}
 end
@@ -911,41 +934,48 @@ end
 
 -- Pickaxe Button Updater
 function updateShopButtons()
-	local leaderstats = player:FindFirstChild("leaderstats")
-	local coins = leaderstats and leaderstats:FindFirstChild("Coins") and leaderstats.Coins.Value or 0
-	shopCoins.Text = "Coins: " .. coins
+        local canBuy, coins, currentTier
 
-	local tierVal = player:FindFirstChild("PickaxeTier")
-	local currentTier = tierVal and tierVal.Value or 1
+        -- Update coin label based on latest values
+        local leaderstats = player:FindFirstChild("leaderstats")
+        local coinsValue = leaderstats and leaderstats:FindFirstChild("Coins")
+        coins = coinsValue and coinsValue.Value or 0
+        shopCoins.Text = "Coins: " .. coins
 
-	for idx, data in pairs(pickaxeUI) do
-		local btn = data.Btn
-		local lbl = data.Lbl
-		local cost = data.Cost
+        local tierVal = player:FindFirstChild("PickaxeTier")
+        currentTier = tierVal and tierVal.Value or 1
 
-		if idx < currentTier then
-			lbl.Text = "Owned"
-			btn.BackgroundColor3 = THEME.Locked
-			btn.Active = false
-		elseif idx == currentTier then
-			lbl.Text = "Equipped"
-			btn.BackgroundColor3 = THEME.AccentGreen
-			btn.Active = false
-		elseif idx == currentTier + 1 then
-			lbl.Text = "Buy ("..cost..")"
-			if coins >= cost then
-				btn.BackgroundColor3 = THEME.AccentBlue
-				btn.Active = true
-			else
-				btn.BackgroundColor3 = THEME.Locked
-				btn.Active = false
-			end
-		else
-			lbl.Text = "Locked"
-			btn.BackgroundColor3 = THEME.Locked
-			btn.Active = false
-		end
-	end
+        for idx, data in pairs(pickaxeUI) do
+                local btn = data.Btn
+                local lbl = data.Lbl
+                local cost = data.Cost
+
+                local isNextTier = (idx == currentTier + 1)
+                canBuy = canPurchaseTier(idx)
+
+                if idx < currentTier then
+                        lbl.Text = "Owned"
+                        btn.BackgroundColor3 = THEME.Locked
+                        btn.Active = false
+                elseif idx == currentTier then
+                        lbl.Text = "Equipped"
+                        btn.BackgroundColor3 = THEME.AccentGreen
+                        btn.Active = false
+                elseif isNextTier then
+                        lbl.Text = "Buy ("..cost..")"
+                        if canBuy then
+                                btn.BackgroundColor3 = THEME.AccentBlue
+                                btn.Active = true
+                        else
+                                btn.BackgroundColor3 = THEME.Locked
+                                btn.Active = false
+                        end
+                else
+                        lbl.Text = "Locked"
+                        btn.BackgroundColor3 = THEME.Locked
+                        btn.Active = false
+                end
+        end
 end
 
 task.spawn(function()
