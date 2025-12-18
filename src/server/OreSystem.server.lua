@@ -376,10 +376,10 @@ local function sellAllOres(player)
 		local coins = getOrCreateCoins(player)
 		coins.Value += totalCoins
 		UpdateQuestSafe(player, "EarnCoins", totalCoins)
-		}
-		end
+	end
+end
 
-		SellAllEvent.OnServerEvent:Connect(function(player)
+SellAllEvent.OnServerEvent:Connect(function(player)
 	sellAllOres(player)
 end)
 
@@ -819,5 +819,4 @@ for _, spawnPoint in ipairs(spawnFolder:GetChildren()) do
 			spawnOreAtPoint(spawnPoint)
 		end
 	end
-end
 end
