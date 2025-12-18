@@ -31,10 +31,25 @@ end
 
 local function findTemplate(modelsFolder, cfg, idx)
 	if not modelsFolder then return nil end
-	if cfg.ModelName and modelsFolder:FindChild(cfg.ModelName) then return modelsFolder[cfg.ModelName] end
-	if cfg.Id and modelsFolder:FindChild(cfg.Id) then return modelsFolder[cfg.Id] end
-	local guess = "Pickaxe"..idx
-	return modelsFolder:FindChild(guess)
+
+	local function first(name)
+		if typeof(name) ~= "string" or name == "" then return nil end
+		return modelsFolder:FindFirstChild(name)
+	end
+
+	local t
+	if cfg and cfg.ModelName then
+		t = first(cfg.ModelName)
+		if t then return t end
+	end
+
+	if cfg and cfg.Id then
+		t = first(cfg.Id)
+		if t then return t end
+	end
+
+	local guess = "Pickaxe" .. tostring(idx)
+	return first(guess)
 end
 
 local function cloneAsModel(template)

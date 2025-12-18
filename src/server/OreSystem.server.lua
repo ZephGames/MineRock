@@ -4,820 +4,607 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local MarketplaceService = game:GetService("MarketplaceService")
-local ServerStorage = game:GetService("ServerStorage")
+local CollectionService = game:GetService("CollectionService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
 
+-- Shared configs/modules
 local Shared = ReplicatedStorage:WaitForChild("RojoShared")
 local OreConfig = require(Shared:WaitForChild("OreConfig"))
 local PickaxeConfig = require(Shared:WaitForChild("PickaxeConfig"))
+local PickaxeVisuals = require(Shared:WaitForChild("PickaxeVisuals"))
 local RarityFX = require(Shared:WaitForChild("RarityFX"))
 
-local Remotes = ReplicatedStorage:WaitForChild("Remotes")
-local MineRockEvent = Remotes:WaitForChild("MineRock")
-local InventoryUpdateEvent = Remotes:WaitForChild("InventoryUpdate")
-local SellAllEvent = Remotes:WaitForChild("SellAll")
-local TeleportToShopEvent = Remotes:WaitForChild("TeleportToShop")
-local RequestPickaxeUpgradeEvent = Remotes:WaitForChild("RequestPickaxeUpgrade")
+-- ====== BOOTSTRAP (prevents infinite-yield if something is missing) ======
 
-local OreTemplates = ReplicatedStorage:WaitForChild("RockTemplates")
-local spawnFolder = Workspace:WaitForChild("OreSpawnPoints")
-local ShopCenter = Workspace:WaitForChild("ShopCenter")
-
-local rockFolder = Workspace:FindFirstChild("Rocks")
-if not rockFolder then
-	rockFolder = Instance.new("Folder")
-	rockFolder.Name = "Rocks"
-	rockFolder.Parent = Workspace
+local function ensureFolder(parent, name)
+	local f = parent:FindFirstChild(name)
+	if not f then
+		f = Instance.new("Folder")
+		f.Name = name
+		f.Parent = parent
+		warn("[BOOT] Created missing folder:", parent:GetFullName() .. "." .. name)
+	end
+	return f
 end
 
-local rarityColors = OreConfig.RarityColors or {}
-
--- ====== canonical tool template (authoritative) ======
-local ToolRoot = ReplicatedStorage:WaitForChild("Tools", 10)
-local CanonicalToolTemplate = ToolRoot and ToolRoot:FindFirstChild("Pickaxe")
-
--- ====== tuning constants ======
-local HIT_RANGE       = 15
-local SPAWN_RADIUS    = 100
-local ROCKS_PER_POINT = 20
-local MIN_ROCK_GAP    = 20
-local SCALE_MIN       = 0.7
-local SCALE_MAX       = 2.5
-local SELL_RADIUS     = 15
-local STREAK_WINDOW   = 4
-local STREAK_DAMAGE_STEP = 0.03
-local STREAK_YIELD_STEP  = 0.015
-local STREAK_DAMAGE_CAP  = 0.35
-local STREAK_YIELD_CAP   = 0.25
-local BURST_BASE_CHANCE  = 0.18
-
--- ====== gamepass (placeholder) ======
-local SELL_ANYWHERE_PASS_ID = 1631522468
-local gamepassCache = {}
-
-MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, purchased)
-	if passId == SELL_ANYWHERE_PASS_ID and purchased then
-		gamepassCache[player.UserId] = true
+local function ensureRemoteEvent(parent, name)
+	local r = parent:FindFirstChild(name)
+	if not r then
+		r = Instance.new("RemoteEvent")
+		r.Name = name
+		r.Parent = parent
+		warn("[BOOT] Created missing RemoteEvent:", name)
 	end
-end)
+	return r
+end
 
-local function ownsSellAnywherePass(player)
-	if player:GetAttribute("ForceSellAnywhere") == true then
-		return true
-	end
-	if gamepassCache[player.UserId] ~= nil then
-		return gamepassCache[player.UserId]
-	end
-	local ok, result = pcall(function()
-		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, SELL_ANYWHERE_PASS_ID)
-	end)
-	if ok then
-		gamepassCache[player.UserId] = result
-		return result
+-- Remotes (this also unblocks your client UI scripts that WaitForChild("Remotes"))
+local Remotes = ensureFolder(ReplicatedStorage, "Remotes")
+local MineRockEvent = ensureRemoteEvent(Remotes, "MineRock")
+local InventoryUpdateEvent = ensureRemoteEvent(Remotes, "InventoryUpdate")
+local SellAllEvent = ensureRemoteEvent(Remotes, "SellAll")
+local TeleportToShopEvent = ensureRemoteEvent(Remotes, "TeleportToShop")
+local RequestPickaxeUpgradeEvent = ensureRemoteEvent(Remotes, "RequestPickaxeUpgrade")
+ensureRemoteEvent(Remotes, "DevFlyToggle") -- used by DevFly scripts
+
+-- World / assets (these were previously hard-blocking with WaitForChild)
+local OreTemplates = ensureFolder(ReplicatedStorage, "RockTemplates")
+local spawnFolder = ensureFolder(Workspace, "OreSpawnPoints")
+
+local ShopCenter = Workspace:FindFirstChild("ShopCenter")
+if not ShopCenter then
+	ShopCenter = Instance.new("Part")
+	ShopCenter.Name = "ShopCenter"
+	ShopCenter.Anchored = true
+	ShopCenter.CanCollide = false
+	ShopCenter.Transparency = 1
+	ShopCenter.Size = Vector3.new(4, 1, 4)
+	ShopCenter.Position = Vector3.new(0, 5, 0)
+	ShopCenter.Parent = Workspace
+	warn("[BOOT] Created placeholder ShopCenter at (0,5,0). Move it to your shop.")
+end
+
+
+-- =========================
+-- Settings / constants
+-- =========================
+local PICKAXE_TOOL_NAME = "Pickaxe"
+local TOOLS_FOLDER_NAME = "Tools"
+
+local MINING_DISTANCE = 12
+local SWING_COOLDOWN = 0.12
+local HIT_DEBOUNCE = 0.05
+
+local RESPAWN_TIME_DEFAULT = 6
+
+-- If you’re using a gamepass for something later, keep as-is:
+local SELL_ANYWHERE_PASS_ID = PickaxeConfig.SELL_ANYWHERE_PASS_ID or 0
+
+-- =========================
+-- State
+-- =========================
+local playerData = {} -- [player] = { inventory = { [oreName]=count }, coins, pickaxeId, lastSwing, ... }
+local activeRocks = {} -- [rockModel] = { oreName, health, maxHealth, respawnTime, spawnCFrame, spawnPoint }
+
+-- =========================
+-- Helpers
+-- =========================
+local function safeGetLeaderstatsValue(player, statName)
+	local ls = player:FindFirstChild("leaderstats")
+	if not ls then return nil end
+	local v = ls:FindFirstChild(statName)
+	return v
+end
+
+local function getCoins(player)
+	local v = safeGetLeaderstatsValue(player, "Coins")
+	if v then return v.Value end
+	local d = playerData[player]
+	return d and d.coins or 0
+end
+
+local function addCoins(player, amount)
+	local v = safeGetLeaderstatsValue(player, "Coins")
+	if v then
+		v.Value += amount
 	else
-		warn("Gamepass check failed:", result)
-		return false
+		playerData[player].coins = (playerData[player].coins or 0) + amount
 	end
 end
 
-Players.PlayerRemoving:Connect(function(player)
-	gamepassCache[player.UserId] = nil
-end)
-
-local function UpdateQuestSafe(player, questType, amount, oreType)
-	local fn = _G.UpdateQuest
-	if typeof(fn) == "function" then
-		fn(player, questType, amount, oreType)
-	end
+local function getPickaxeId(player)
+	local d = playerData[player]
+	return d and d.pickaxeId or (PickaxeConfig.DEFAULT_PICKAXE_ID or "Basic")
 end
 
-local function addTotalMined(player, amount)
-	local ls = player:FindFirstChild("leaderstats")
-	if not ls then return end
-	local totalMined = ls:FindFirstChild("TotalMined")
-	if totalMined then
-		totalMined.Value += (amount or 1)
-	end
+local function setPickaxeId(player, pickaxeId)
+	local d = playerData[player]
+	if not d then return end
+	d.pickaxeId = pickaxeId
+
+	local v = safeGetLeaderstatsValue(player, "Pickaxe")
+	if v then v.Value = tostring(pickaxeId) end
 end
 
--- ====== inventory & coins ======
-
-local function getOrCreateInventory(player)
-	local inv = player:FindFirstChild("Inventory")
-	if not inv then
-		inv = Instance.new("Folder")
-		inv.Name = "Inventory"
-		inv.Parent = player
-	end
-	return inv
+local function getInventory(player)
+	local d = playerData[player]
+	if not d then return {} end
+	d.inventory = d.inventory or {}
+	return d.inventory
 end
 
-local function addOreToInventory(player, oreType, amount)
-	if amount == 0 then return end
-	local inv = getOrCreateInventory(player)
-	local item = inv:FindFirstChild(oreType)
-	if not item then
-		item = Instance.new("IntValue")
-		item.Name = oreType
-		item.Value = 0
-		item.Parent = inv
-	end
-	item.Value += amount
-	if item.Value < 0 then item.Value = 0 end
-	InventoryUpdateEvent:FireClient(player, oreType, item.Value)
-end
-
-local function getOrCreateLeaderstats(player)
-	local ls = player:FindFirstChild("leaderstats")
-	if not ls then
-		ls = Instance.new("Folder")
-		ls.Name = "leaderstats"
-		ls.Parent = player
-	end
-	return ls
-end
-
-local function getOrCreateCoins(player)
-	local ls = getOrCreateLeaderstats(player)
-	local coins = ls:FindFirstChild("Coins")
-	if not coins then
-		coins = Instance.new("IntValue")
-		coins.Name = "Coins"
-		coins.Value = 0
-		coins.Parent = ls
-	end
-	return coins
-end
-
--- ====== pickaxe helpers ======
-
-local lastHitTimes = {}
-local lastMineRemoteTimes = {}
-local REMOTE_MIN_INTERVAL = 0.05
-local streakState = {}
-
-local function getPickaxeTierValue(player)
-	local v = player:FindFirstChild("PickaxeTier")
-	if v and typeof(v.Value) == "number" then
-		local maxTier = PickaxeConfig.GetTierCount()
-		return math.clamp(v.Value, 1, maxTier)
-	end
-	return 1
-end
-
-local function getPickaxeStats(player)
-	local tierIndex = getPickaxeTierValue(player)
-	local cfg = PickaxeConfig.GetTier(tierIndex) or {}
-	local damage = cfg.Damage or 10
-	local cooldown = cfg.Cooldown or 0.5
-	local critChance = cfg.CritChance or 0
-	local critMultiplier = cfg.CritMultiplier or 1.5
-	return damage, cooldown, tierIndex, cfg, critChance, critMultiplier
-end
-
--- prefer canonical template; fallback to search
-local function findPickaxeTemplate(tierIndex)
-	-- 1) canonical
-	if CanonicalToolTemplate and CanonicalToolTemplate:IsA("Tool") then
-		return CanonicalToolTemplate
-	end
-	-- 2) fallback search
-	local cfg = PickaxeConfig.GetTier(tierIndex)
-	if not cfg then return nil end
-	local candidateNames = {}
-	local function addCandidate(name)
-		if typeof(name) == "string" and name ~= "" then
-			table.insert(candidateNames, name)
-		end
-	end
-	addCandidate(cfg.ToolName)
-	addCandidate(cfg.Id)
-	addCandidate(cfg.DisplayName)
-	if cfg.Id then
-		addCandidate(cfg.Id .. "Pickaxe")
-		addCandidate(cfg.Id .. " Pickaxe")
-	end
-	addCandidate("Pickaxe")
-
-	local containers = {
-		ReplicatedStorage:FindFirstChild("Tools"),
-		ReplicatedStorage:FindFirstChild("Pickaxes"),
-		ReplicatedStorage:FindFirstChild("PickaxeTools"),
-		ServerStorage:FindFirstChild("Tools"),
-		ServerStorage:FindFirstChild("Pickaxes"),
-		ServerStorage:FindFirstChild("PickaxeTools"),
+local function fireInventoryUpdate(player)
+	local inv = getInventory(player)
+	local payload = {
+		inventory = inv,
+		coins = getCoins(player),
+		pickaxeId = getPickaxeId(player),
 	}
-	for _, folder in ipairs(containers) do
-		if folder then
-			for _, name in ipairs(candidateNames) do
-				local template = folder:FindFirstChild(name)
-				if template and template:IsA("Tool") then
-					return template
-				end
-			end
-		end
-	end
-	return nil
+	InventoryUpdateEvent:FireClient(player, payload)
 end
 
-local function clearExistingPickaxes(player)
-	local function cleanContainer(container)
-		if not container then return end
-		for _, child in ipairs(container:GetChildren()) do
-			if child:IsA("Tool") then
-				local nameLower = string.lower(child.Name)
-				if child:GetAttribute("IsPickaxe") == true or nameLower:find("pickaxe") then
-					child:Destroy()
-				end
-			end
-		end
-	end
-	cleanContainer(player:FindFirstChildOfClass("Backpack") or player:FindFirstChild("Backpack"))
-	cleanContainer(player.Character)
+local function isAliveCharacter(player)
+	local char = player.Character
+	if not char then return false end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	return hum and hum.Health > 0
 end
 
-local function ensureBackpack(player)
-	local backpack = player:FindFirstChildOfClass("Backpack") or player:FindFirstChild("Backpack")
-	if backpack then
-		return backpack
-	end
-
-	backpack = Instance.new("Backpack")
-	backpack.Name = "Backpack"
-	backpack.Parent = player
-	return backpack
+local function getRoot(player)
+	local char = player.Character
+	if not char then return nil end
+	return char:FindFirstChild("HumanoidRootPart")
 end
 
-local _templateWarned = {}
+-- =========================
+-- Pickaxe tool management
+-- =========================
+local function getToolsFolder()
+	return ReplicatedStorage:FindFirstChild(TOOLS_FOLDER_NAME)
+end
 
-local function ensurePickaxeEquipped(player, tierIndex)
-	local template = findPickaxeTemplate(tierIndex)
-	if not template then
-		if not _templateWarned[player.UserId] then
-			_templateWarned[player.UserId] = true
-			warn(string.format("No pickaxe template found for %s at tier %d", player.Name, tierIndex))
-		end
-		return
+local function getPickaxeTemplate()
+	local tools = getToolsFolder()
+	if not tools then return nil end
+	return tools:FindFirstChild(PICKAXE_TOOL_NAME)
+end
+
+local function ensurePickaxeEquipped(player)
+	-- Tool should be in Backpack or Character
+	if not player or not player.Parent then return end
+
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then
+		player:WaitForChild("Backpack", 5)
+		backpack = player:FindFirstChildOfClass("Backpack")
 	end
-	local backpack = ensureBackpack(player)
 	if not backpack then return end
 
-	clearExistingPickaxes(player)
+	local char = player.Character
+	if not char then return end
 
-	local newTool = template:Clone()
-	newTool:SetAttribute("IsPickaxe", true)
-	newTool.Parent = backpack
-
-	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid:EquipTool(newTool)
-	end
-end
-
-local function updateStreak(player, now)
-	local data = streakState[player]
-	if not data then
-		data = { count = 0, lastHit = 0, damageBonus = 0, yieldBonus = 0 }
-	end
-	if now - (data.lastHit or 0) <= STREAK_WINDOW then
-		data.count += 1
-	else
-		data.count = 1
-	end
-	data.lastHit = now
-	data.damageBonus = math.min(STREAK_DAMAGE_CAP, (data.count - 1) * STREAK_DAMAGE_STEP)
-	data.yieldBonus = math.min(STREAK_YIELD_CAP, (data.count - 1) * STREAK_YIELD_STEP)
-	streakState[player] = data
-	player:SetAttribute("MiningStreak", data.count)
-	player:SetAttribute("MiningMomentum", 1 + data.damageBonus)
-	return data
-end
-
-local function resetStreak(player)
-	streakState[player] = nil
-	player:SetAttribute("MiningStreak", 0)
-	player:SetAttribute("MiningMomentum", 1)
-end
-
-local function applyCritical(damage, critChance, critMultiplier)
-	if critChance > 0 and math.random() < critChance then
-		return damage * critMultiplier, true
-	end
-	return damage, false
-end
-
--- ====== upgrades ======
-
-local function handlePickaxeUpgradeRequest(player, targetTierIndex)
-	if typeof(targetTierIndex) ~= "number" then return end
-
-	local tiers = PickaxeConfig.Tiers
-	local maxTier = #tiers
-	if targetTierIndex < 1 or targetTierIndex > maxTier then return end
-
-	local pickaxeValue = player:FindFirstChild("PickaxeTier")
-	if not pickaxeValue then return end
-
-	local currentTier = getPickaxeTierValue(player)
-	if targetTierIndex <= currentTier then return end
-	if targetTierIndex > currentTier + 1 then return end
-
-	local targetConfig = tiers[targetTierIndex]
-	if not targetConfig then return end
-
-	local coins = getOrCreateCoins(player)
-	local cost = targetConfig.Cost or 0
-	if coins.Value < cost then return end
-
-	coins.Value -= cost
-	pickaxeValue.Value = targetTierIndex
-	-- (no print spam)
-end
-
-RequestPickaxeUpgradeEvent.OnServerEvent:Connect(handlePickaxeUpgradeRequest)
-
--- ====== shop helpers ======
-
-local function isPlayerNearShop(player)
-	if not ShopCenter then return false end
-	local character = player.Character
-	local hrp = character and character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return false end
-	local centerPos
-	if ShopCenter:IsA("BasePart") then
-		centerPos = ShopCenter.Position
-	elseif ShopCenter:IsA("Model") and ShopCenter.PrimaryPart then
-		centerPos = ShopCenter.PrimaryPart.Position
-	end
-	if not centerPos then return false end
-	local distance = (hrp.Position - centerPos).Magnitude
-	return distance <= SELL_RADIUS
-end
-
-local function sellAllOres(player)
-	if not ownsSellAnywherePass(player) and not isPlayerNearShop(player) then
+	-- Already present?
+	if backpack:FindFirstChild(PICKAXE_TOOL_NAME) or char:FindFirstChild(PICKAXE_TOOL_NAME) then
 		return
 	end
-	local inv = player:FindFirstChild("Inventory")
-	if not inv then return end
 
-	local totalCoins = 0
-	for oreName, config in pairs(OreConfig) do
-		if type(config) == "table" and oreName ~= "SpawnWeights" and oreName ~= "RarityColors" then
-			local item = inv:FindFirstChild(oreName)
-			if item and item.Value > 0 then
-				local amount = item.Value
-				local valuePer = config.Value or 1
-				totalCoins += amount * valuePer
-				addOreToInventory(player, oreName, -amount)
-			end
-		end
-	end
-	if totalCoins > 0 then
-		local coins = getOrCreateCoins(player)
-		coins.Value += totalCoins
-		UpdateQuestSafe(player, "EarnCoins", totalCoins)
-		}
-		end
-
-		SellAllEvent.OnServerEvent:Connect(function(player)
-	sellAllOres(player)
-end)
-
-TeleportToShopEvent.OnServerEvent:Connect(function(player)
-	if not ShopCenter then return end
-	local character = player.Character
-	local hrp = character and character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-	local centerPos
-	if ShopCenter:IsA("BasePart") then
-		centerPos = ShopCenter.Position
-	elseif ShopCenter:IsA("Model") and ShopCenter.PrimaryPart then
-		centerPos = ShopCenter.PrimaryPart.Position
-	end
-	if not centerPos then return end
-	local targetPos = centerPos + Vector3.new(0, 4, 0)
-	hrp.CFrame = CFrame.new(targetPos, targetPos + hrp.CFrame.LookVector)
-end)
-
--- ====== rock visuals ======
-
-local function updateRockScale(rock)
-	local initialScale = rock:GetAttribute("InitialScale") or 1
-	local maxHealth = rock:GetAttribute("MaxHealth") or 1
-	local health = rock:GetAttribute("Health") or maxHealth
-	if maxHealth <= 0 then return end
-	local frac = math.clamp(health / maxHealth, 0.4, 1)
-	local targetScale = initialScale * frac
-	if rock.PrimaryPart then
-		rock:ScaleTo(targetScale)
-	end
-end
-
-local function updateOreLabel(rock)
-	local oreType = rock:GetAttribute("OreType") or "?"
-	local config = OreConfig[oreType]
-	if not config then return end
-
-	local gui = rock:FindFirstChild("OreLabel")
-	if not gui then
-		gui = Instance.new("BillboardGui")
-		gui.Name = "OreLabel"
-		gui.Size = UDim2.new(0, 120, 0, 40)
-		gui.StudsOffset = Vector3.new(0, 4, 0)
-		gui.AlwaysOnTop = true
-		gui.MaxDistance = 50
-		gui.Adornee = rock.PrimaryPart
-		gui.Parent = rock
-
-		local text = Instance.new("TextLabel")
-		text.Name = "Text"
-		text.BackgroundTransparency = 1
-		text.Size = UDim2.new(1, 0, 1, 0)
-		text.Font = Enum.Font.GothamBold
-		text.TextScaled = true
-		text.TextStrokeTransparency = 0.4
-		text.TextStrokeColor3 = Color3.new(0, 0, 0)
-		text.Parent = gui
-	end
-
-	local textLabel = gui:FindFirstChild("Text")
-	if not textLabel then return end
-
-	local rarity = config.Rarity
-	local color = rarityColors[rarity] or Color3.new(1, 1, 1)
-	local displayName = config.DisplayName or oreType
-	local health = rock:GetAttribute("Health") or 0
-	local maxHealth = rock:GetAttribute("MaxHealth") or health
-
-	textLabel.TextColor3 = color
-	textLabel.Text = string.format("%s\n%d / %d", displayName, math.max(0, math.floor(health)), math.floor(maxHealth))
-end
-
--- ====== spawn helpers ======
-
-local function chooseRandomOreType()
-	local weights = OreConfig.SpawnWeights or {}
-	local totalWeight = 0
-	for _, w in pairs(weights) do totalWeight += w end
-	if totalWeight <= 0 then return "Stone" end
-	local r = math.random() * totalWeight
-	local cumulative = 0
-	for oreName, w in pairs(weights) do
-		cumulative += w
-		if r <= cumulative then
-			return oreName
-		end
-	end
-	return "Stone"
-end
-
-local function canPlaceAt(position)
-	for _, rock in ipairs(rockFolder:GetChildren()) do
-		local primary = rock.PrimaryPart
-		if primary then
-			local dist = (primary.Position - position).Magnitude
-			if dist < MIN_ROCK_GAP then
-				return false
-			end
-		end
-	end
-	return true
-end
-
-local NATURAL_SURFACE_ATTRIBUTE = "AllowOreSpawn"
-local NATURAL_MATERIALS = {
-	[Enum.Material.Grass] = true,
-	[Enum.Material.Ground] = true,
-	[Enum.Material.Mud] = true,
-	[Enum.Material.Rock] = true,
-	[Enum.Material.Sand] = true,
-	[Enum.Material.Slate] = true,
-	[Enum.Material.CrackedLava] = true,
-}
-
-local function isNaturalMaterial(material)
-	return NATURAL_MATERIALS[material] == true
-end
-
-local function isValidSurface(result)
-	if not result then return false end
-	if result.Material == Enum.Material.Water then return false end
-	if result.Normal.Y < 0.6 then return false end
-
-	local inst = result.Instance
-	if inst:IsA("Terrain") then
-		return true
-	end
-	if inst:IsA("BasePart") then
-		if not inst.CanCollide or not inst.Anchored then
-			return false
-		end
-		if inst:GetAttribute(NATURAL_SURFACE_ATTRIBUTE) then
-			return true
-		end
-		return isNaturalMaterial(result.Material)
-	end
-	return false
-end
-
-local rayParams = RaycastParams.new()
-rayParams.FilterType = Enum.RaycastFilterType.Exclude
-rayParams.FilterDescendantsInstances = { rockFolder }
-rayParams.IgnoreWater = true
-
-local function findGroundPosition(spawnPoint)
-	for _ = 1, 10 do
-		local angle = math.random() * math.pi * 2
-		local radius = math.random() * SPAWN_RADIUS
-		local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
-		local origin = spawnPoint.Position + offset + Vector3.new(0, 40, 0)
-		local result = Workspace:Raycast(origin, Vector3.new(0, -100, 0), rayParams)
-		if isValidSurface(result) then
-			local pos = result.Position
-			if canPlaceAt(pos) then
-				return pos, result.Normal
-			end
-		end
-	end
-	return nil
-end
-
-local function buildSurfaceCFrame(position, normal)
-	local up = normal.Unit
-	local fallback = math.abs(up:Dot(Vector3.new(0, 1, 0))) > 0.99 and Vector3.new(1, 0, 0) or Vector3.new(0, 1, 0)
-	local right = up:Cross(fallback)
-	if right.Magnitude < 1e-4 then
-		right = up:Cross(Vector3.new(0, 0, 1))
-	end
-	right = right.Unit
-	local baseCFrame = CFrame.fromMatrix(position, right, up)
-	local twist = CFrame.fromAxisAngle(up, math.random() * math.pi * 2)
-	return baseCFrame * twist
-end
-
-local function spawnOreAtPoint(spawnPoint)
-	local oreType = chooseRandomOreType()
-	local config = OreConfig[oreType]
-	if not config then
-		warn("Missing OreConfig for", oreType)
-		return nil
-	end
-
-	local templateName = config.TemplateName or oreType
-	local template = OreTemplates:FindFirstChild(templateName)
+	-- Clone from ReplicatedStorage.Tools.Pickaxe
+	local template = getPickaxeTemplate()
 	if not template then
-		warn("Missing ore template:", templateName)
+		warn("[OreSystem] No pickaxe template found at ReplicatedStorage." .. TOOLS_FOLDER_NAME .. "." .. PICKAXE_TOOL_NAME)
+		return
+	end
+
+	local tool = template:Clone()
+	tool.Name = PICKAXE_TOOL_NAME
+	tool.Parent = backpack
+
+	-- Apply visuals based on current pickaxe id (if your visuals module supports tool updates)
+	local pickaxeId = getPickaxeId(player)
+	pcall(function()
+		PickaxeVisuals.ApplyToTool(tool, pickaxeId)
+	end)
+end
+
+local function refreshEquippedPickaxeVisual(player)
+	local pickaxeId = getPickaxeId(player)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	local char = player.Character
+	if not backpack and not char then return end
+
+	local tool = (backpack and backpack:FindFirstChild(PICKAXE_TOOL_NAME)) or (char and char:FindFirstChild(PICKAXE_TOOL_NAME))
+	if not tool then return end
+
+	pcall(function()
+		PickaxeVisuals.ApplyToTool(tool, pickaxeId)
+	end)
+end
+
+-- =========================
+-- Rock spawning / setup
+-- =========================
+local function getSpawnPoints()
+	local folder = spawnFolder
+	local points = {}
+	for _, inst in ipairs(folder:GetChildren()) do
+		if inst:IsA("BasePart") then
+			table.insert(points, inst)
+		end
+	end
+	return points
+end
+
+local function getRockTemplateForOre(oreName)
+	-- Try config-driven mapping first
+	local cfg = OreConfig[oreName]
+	if cfg and cfg.TemplateName then
+		local t = OreTemplates:FindFirstChild(cfg.TemplateName)
+		if t then return t end
+	end
+
+	-- Fallback: template with same name
+	local t = OreTemplates:FindFirstChild(oreName)
+	if t then return t end
+
+	-- Fallback: "RockTemplate"
+	return OreTemplates:FindFirstChild("RockTemplate")
+end
+
+local function setRockPrimaryPart(model)
+	if model.PrimaryPart then return end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			model.PrimaryPart = d
+			return
+		end
+	end
+end
+
+local function tagRock(model, oreName)
+	CollectionService:AddTag(model, "MineableRock")
+	model:SetAttribute("OreName", oreName)
+end
+
+local function setRockCollision(model, canCollide)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CanCollide = canCollide
+			d.CanQuery = true
+			d.CanTouch = true
+		end
+	end
+end
+
+local function hideRock(model)
+	model:SetAttribute("Active", false)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Transparency = 1
+			d.CanCollide = false
+			d.CanTouch = false
+			d.CanQuery = false
+		end
+		local p = d:FindFirstChildWhichIsA("ParticleEmitter", true)
+		if p then p.Enabled = false end
+	end
+end
+
+local function showRock(model)
+	model:SetAttribute("Active", true)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Transparency = 0
+			d.CanCollide = true
+			d.CanTouch = true
+			d.CanQuery = true
+		end
+		local p = d:FindFirstChildWhichIsA("ParticleEmitter", true)
+		if p then p.Enabled = true end
+	end
+end
+
+local function spawnRockAtPoint(spawnPoint, oreName)
+	local template = getRockTemplateForOre(oreName)
+	if not template then
+		warn("[OreSystem] Missing rock template for ore:", oreName, "in ReplicatedStorage.RockTemplates")
 		return nil
 	end
 
 	local rock = template:Clone()
-	rock.Name = oreType .. "Rock"
-	rock.Parent = rockFolder
+	rock.Name = oreName .. "_Rock"
+	rock.Parent = Workspace
 
-	if not rock.PrimaryPart then
-		rock.PrimaryPart = rock:FindFirstChildWhichIsA("BasePart")
-	end
-	if not rock.PrimaryPart then
-		warn("Rock template has no PrimaryPart:", templateName)
-		rock:Destroy()
-		return nil
-	end
-
-	local pos, normal = findGroundPosition(spawnPoint)
-	if not pos or not normal then
-		rock:Destroy()
-		return nil
+	if rock:IsA("Model") then
+		setRockPrimaryPart(rock)
+		if rock.PrimaryPart then
+			rock:PivotTo(spawnPoint.CFrame)
+		end
+	else
+		-- If someone used a single part instead of model
+		if rock:IsA("BasePart") then
+			rock.CFrame = spawnPoint.CFrame
+		end
 	end
 
-	rock:SetPrimaryPartCFrame(buildSurfaceCFrame(pos, normal))
+	tagRock(rock, oreName)
+	rock:SetAttribute("Active", true)
 
-	-- random size
-	local sizeMult = math.random(math.floor(SCALE_MIN * 100), math.floor(SCALE_MAX * 100)) / 100
-	rock:SetAttribute("SizeMultiplier", sizeMult)
-	rock:SetAttribute("InitialScale", sizeMult)
-	rock:ScaleTo(sizeMult)
+	local cfg = OreConfig[oreName] or {}
+	local maxHealth = cfg.Health or 10
+	local respawnTime = cfg.RespawnTime or RESPAWN_TIME_DEFAULT
 
-	-- size-based health
-	local baseMaxHealth = config.MaxHealth or 100
-	local sizeHealthMult = sizeMult ^ 1.2
-	local scaledMaxHealth = math.max(10, math.floor(baseMaxHealth * sizeHealthMult + 0.5))
+	activeRocks[rock] = {
+		oreName = oreName,
+		health = maxHealth,
+		maxHealth = maxHealth,
+		respawnTime = respawnTime,
+		spawnCFrame = spawnPoint.CFrame,
+		spawnPoint = spawnPoint,
+	}
 
-	rock:SetAttribute("BaseMaxHealth", baseMaxHealth)
-	rock:SetAttribute("MaxHealth", scaledMaxHealth)
-	rock:SetAttribute("Health", scaledMaxHealth)
-	rock:SetAttribute("OreType", oreType)
-	rock:SetAttribute("Depleted", false)
-	rock:SetAttribute("HitCount", 0)
-
-	local rarity = (config and config.Rarity) or "Common"
-	rock:SetAttribute("Rarity", rarity)
-	local color = rarityColors[rarity] or Color3.new(1, 1, 1)
-	RarityFX.ApplyToRock(rock, rarity, color)
-
-	local spValue = Instance.new("ObjectValue")
-	spValue.Name = "SpawnPoint"
-	spValue.Value = spawnPoint
-	spValue.Parent = rock
-
-	updateRockScale(rock)
-	updateOreLabel(rock)
+	-- optional effects
+	pcall(function()
+		RarityFX.ApplyRockFX(rock, oreName)
+	end)
 
 	return rock
 end
 
-local function rollBurstChance(streakCount)
-	return math.min(0.85, BURST_BASE_CHANCE + math.max(0, streakCount - 1) * 0.02)
-end
-
-local function calculateDropAmount(config, sizeMult, streak, isCrit)
-	local baseYield = (config and config.Yield) or 1
-	local rawDrop = baseYield * sizeMult
-	local streakBonus = rawDrop * ((streak and streak.yieldBonus) or 0)
-	local critBonus = isCrit and (rawDrop * 0.15) or 0
-
-	local burst = 0
-	local burstRange = config and config.BurstYield
-	if burstRange and math.random() < rollBurstChance((streak and streak.count) or 1) then
-		local minExtra = burstRange[1] or burstRange.min or 1
-		local maxExtra = burstRange[2] or burstRange.max or minExtra
-		burst = math.random(minExtra, maxExtra)
+local function chooseOreForPoint(_spawnPoint)
+	-- If your OreConfig has a weighted list, keep it simple:
+	if OreConfig.GetRandomOre then
+		return OreConfig.GetRandomOre()
 	end
 
-	local total = math.max(1, math.floor(rawDrop + streakBonus + critBonus + burst + 0.5))
-	return total, burst > 0
-end
-
-local function awardTreasure(player, oreType, config, streakCount)
-	local treasureChance = (config and config.TreasureChance) or 0
-	treasureChance += math.min(0.08, math.max(0, streakCount - 1) * 0.005)
-
-	if math.random() < treasureChance then
-		local coins = getOrCreateCoins(player)
-		local coinReward = math.floor(((config and config.Value) or 1) * math.random(2, 5))
-		coins.Value += coinReward
-		UpdateQuestSafe(player, "EarnCoins", coinReward)
-
-		local shards = 0
-		if math.random() < 0.35 then
-			shards = 1 + math.floor(math.max(0, streakCount - 1) / 7)
-			addOreToInventory(player, "GemShards", shards)
+	-- Fallback: pick first ore in config table
+	for oreName, _ in pairs(OreConfig) do
+		if type(oreName) == "string" and type(_) == "table" then
+			return oreName
 		end
-		return coinReward, shards
 	end
-	return 0, 0
+
+	return "Stone"
 end
 
--- ====== mining ======
+local function initialSpawnAll()
+	local points = getSpawnPoints()
+	if #points == 0 then
+		warn("[OreSystem] No OreSpawnPoints found. Put Parts under Workspace.OreSpawnPoints.")
+	end
 
-local function onMineRock(player, hitInstance)
-	if typeof(hitInstance) ~= "Instance" then return end
+	for _, sp in ipairs(points) do
+		local oreName = chooseOreForPoint(sp)
+		spawnRockAtPoint(sp, oreName)
+	end
+end
+
+-- =========================
+-- Mining logic
+-- =========================
+local function canPlayerMineRock(player, rock)
+	if not isAliveCharacter(player) then
+		return false, "dead"
+	end
+
+	local root = getRoot(player)
+	if not root then
+		return false, "no_root"
+	end
+
+	if not rock or not rock.Parent then
+		return false, "no_rock"
+	end
+
+	if rock:GetAttribute("Active") == false then
+		return false, "inactive"
+	end
+
+	local rockPos
+	if rock:IsA("Model") then
+		if rock.PrimaryPart then
+			rockPos = rock.PrimaryPart.Position
+		else
+			local pp = rock:FindFirstChildWhichIsA("BasePart", true)
+			if pp then rockPos = pp.Position end
+		end
+	elseif rock:IsA("BasePart") then
+		rockPos = rock.Position
+	end
+
+	if not rockPos then
+		return false, "no_pos"
+	end
+
+	local dist = (root.Position - rockPos).Magnitude
+	if dist > MINING_DISTANCE then
+		return false, "too_far"
+	end
+
+	return true
+end
+
+local function awardOreToPlayer(player, oreName, amount)
+	local inv = getInventory(player)
+	inv[oreName] = (inv[oreName] or 0) + (amount or 1)
+	fireInventoryUpdate(player)
+end
+
+local function damageRock(player, rock, damage)
+	local state = activeRocks[rock]
+	if not state then return end
+
+	state.health -= damage
+	if state.health > 0 then
+		return
+	end
+
+	-- Rock "breaks"
+	state.health = 0
+	hideRock(rock)
+
+	-- Award drop(s)
+	local oreName = state.oreName
+	local cfg = OreConfig[oreName] or {}
+	local dropAmount = cfg.DropAmount or 1
+	awardOreToPlayer(player, oreName, dropAmount)
+
+	-- Respawn
+	task.delay(state.respawnTime, function()
+		if not rock or not rock.Parent then return end
+		-- Reset
+		state.health = state.maxHealth
+		-- Optionally reroll ore type:
+		local newOre = chooseOreForPoint(state.spawnPoint)
+		state.oreName = newOre
+		local newCfg = OreConfig[newOre] or {}
+		state.maxHealth = newCfg.Health or state.maxHealth
+		state.health = state.maxHealth
+		state.respawnTime = newCfg.RespawnTime or state.respawnTime
+		rock:SetAttribute("OreName", newOre)
+
+		-- Re-apply FX
+		pcall(function()
+			RarityFX.ApplyRockFX(rock, newOre)
+		end)
+
+		showRock(rock)
+	end)
+end
+
+-- =========================
+-- Remotes
+-- =========================
+local lastHit = {} -- [player] = tick()
+
+MineRockEvent.OnServerEvent:Connect(function(player, rock)
+	if not playerData[player] then return end
 
 	local now = os.clock()
-	local lastRemote = lastMineRemoteTimes[player]
-	if lastRemote and (now - lastRemote) < REMOTE_MIN_INTERVAL then
+	if lastHit[player] and (now - lastHit[player]) < HIT_DEBOUNCE then
 		return
 	end
-	lastMineRemoteTimes[player] = now
+	lastHit[player] = now
 
-	local rock
-	if hitInstance:IsA("Model") then
-		rock = hitInstance
-	elseif hitInstance:IsA("BasePart") and hitInstance.Parent and hitInstance.Parent:IsA("Model") then
-		rock = hitInstance.Parent
+	local ok, reason = canPlayerMineRock(player, rock)
+	if not ok then
+		return
+	end
+
+	-- pickaxe power from config
+	local pickaxeId = getPickaxeId(player)
+	local pCfg = PickaxeConfig.GetPickaxe and PickaxeConfig.GetPickaxe(pickaxeId) or (PickaxeConfig[pickaxeId] or {})
+	local power = pCfg.Power or 1
+
+	damageRock(player, rock, power)
+end)
+
+SellAllEvent.OnServerEvent:Connect(function(player)
+	if not playerData[player] then return end
+
+	local inv = getInventory(player)
+	local total = 0
+
+	for oreName, count in pairs(inv) do
+		local cfg = OreConfig[oreName] or {}
+		local value = cfg.Value or 1
+		total += (count * value)
+		inv[oreName] = 0
+	end
+
+	addCoins(player, total)
+	fireInventoryUpdate(player)
+end)
+
+TeleportToShopEvent.OnServerEvent:Connect(function(player)
+	if not isAliveCharacter(player) then return end
+	local root = getRoot(player)
+	if not root then return end
+	root.CFrame = ShopCenter.CFrame + Vector3.new(0, 5, 0)
+end)
+
+RequestPickaxeUpgradeEvent.OnServerEvent:Connect(function(player, nextPickaxeId)
+	if not playerData[player] then return end
+
+	local currentId = getPickaxeId(player)
+	if currentId == nextPickaxeId then
+		return
+	end
+
+	-- validate upgrade path (if your config supports it)
+	local ok = true
+	if PickaxeConfig.CanUpgradeTo then
+		ok = PickaxeConfig.CanUpgradeTo(currentId, nextPickaxeId)
+	end
+	if not ok then
+		return
+	end
+
+	-- cost
+	local cost = 0
+	if PickaxeConfig.GetPickaxeCost then
+		cost = PickaxeConfig.GetPickaxeCost(nextPickaxeId) or 0
 	else
+		local nextCfg = PickaxeConfig[nextPickaxeId] or {}
+		cost = nextCfg.Cost or 0
+	end
+
+	if getCoins(player) < cost then
 		return
 	end
 
-	if not rock:IsDescendantOf(rockFolder) then return end
-	if rock:GetAttribute("Depleted") then return end
+	addCoins(player, -cost)
+	setPickaxeId(player, nextPickaxeId)
 
-	local character = player.Character
-	local hrp = character and character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
+	-- update visuals immediately if they already have the tool
+	refreshEquippedPickaxeVisual(player)
 
-	local primary = rock.PrimaryPart
-	if not primary then return end
+	fireInventoryUpdate(player)
+end)
 
-	local distance = (hrp.Position - primary.Position).Magnitude
-	if distance > HIT_RANGE then return end
+-- =========================
+-- Player lifecycle
+-- =========================
+local function setupPlayer(player)
+	playerData[player] = playerData[player] or {
+		inventory = {},
+		coins = 0,
+		pickaxeId = PickaxeConfig.DEFAULT_PICKAXE_ID or "Basic",
+	}
 
-	local damage, cooldown, _, _, critChance, critMultiplier = getPickaxeStats(player)
-	local streak = updateStreak(player, now)
-
-	local cooldownScale = math.max(0.55, 1 - streak.damageBonus * 0.35)
-	local last = lastHitTimes[player]
-	if last and (now - last) < cooldown * cooldownScale then
-		return
-	end
-	lastHitTimes[player] = now
-
-	local maxHealth = rock:GetAttribute("MaxHealth")
-	local health = rock:GetAttribute("Health")
-	if not maxHealth or not health then return end
-
-	local scaledDamage = damage * (1 + streak.damageBonus)
-	local finalDamage, isCrit = applyCritical(scaledDamage, critChance, critMultiplier)
-
-	health -= finalDamage
-	rock:SetAttribute("Health", health)
-
-	local hitCount = (rock:GetAttribute("HitCount") or 0) + 1
-	rock:SetAttribute("HitCount", hitCount)
-
-	if health > 0 then
-		if hitCount % 2 == 0 then
-			updateRockScale(rock)
+	-- If leaderstats exist, sync from them
+	local ls = player:FindFirstChild("leaderstats")
+	if ls then
+		local pickaxeStat = ls:FindFirstChild("Pickaxe")
+		if pickaxeStat then
+			playerData[player].pickaxeId = pickaxeStat.Value
 		end
-		updateOreLabel(rock)
-		return
 	end
 
-	rock:SetAttribute("Health", 0)
-	rock:SetAttribute("Depleted", true)
-
-	local oreType = rock:GetAttribute("OreType") or "Stone"
-	local config = OreConfig[oreType]
-	local respawnTime = (config and config.RespawnTime) or 10
-	local sizeMult = rock:GetAttribute("SizeMultiplier") or 1
-
-	local dropAmount = calculateDropAmount(config, sizeMult, streak, isCrit)
-	addOreToInventory(player, oreType, dropAmount)
-
-	addTotalMined(player, 1)
-	UpdateQuestSafe(player, "MineCount", 1)
-	UpdateQuestSafe(player, "MineSpecific", 1, oreType)
-
-	local _, shards = awardTreasure(player, oreType, config, streak.count)
-	if shards > 0 then
-		player:SetAttribute("RecentShardGain", shards)
-	end
-
-	local spValue = rock:FindFirstChild("SpawnPoint")
-	local spawnPoint = spValue and spValue.Value
-
-	local rarity = rock:GetAttribute("Rarity") or ((config and config.Rarity) or "Common")
-	RarityFX.PlayBreak(rock, rarity)
-
-	rock:Destroy()
-
-	if spawnPoint then
-		task.delay(respawnTime, function()
-			if spawnPoint.Parent then
-				spawnOreAtPoint(spawnPoint)
-			end
-		end)
-	end
-end
-
-MineRockEvent.OnServerEvent:Connect(onMineRock)
-
--- ====== player setup ======
-
-Players.PlayerAdded:Connect(function(player)
-	getOrCreateCoins(player)
-	player:SetAttribute("MiningStreak", 0)
-	player:SetAttribute("MiningMomentum", 1)
-	player:SetAttribute("RecentShardGain", 0)
-
-	local tierValue = player:FindFirstChild("PickaxeTier")
-	if not tierValue then
-		tierValue = Instance.new("IntValue")
-		tierValue.Name = "PickaxeTier"
-		tierValue.Value = 1
-		tierValue.Parent = player
-	end
-
-	local function refreshPickaxe()
-		ensurePickaxeEquipped(player, getPickaxeTierValue(player))
-	end
-
-	-- change => equip/refresh
-	tierValue.Changed:Connect(refreshPickaxe)
-
-	player.CharacterAdded:Connect(function()
-		-- Defer + small delay to avoid replication race (Rojo/ReplicatedStorage content)
-		task.defer(refreshPickaxe)
-		task.delay(0.25, refreshPickaxe)
+	-- Give pickaxe on join
+	task.defer(function()
+		ensurePickaxeEquipped(player)
+		fireInventoryUpdate(player)
 	end)
 
-	-- initial
-	task.delay(0.25, refreshPickaxe)
+	player.CharacterAdded:Connect(function()
+		task.wait(0.2)
+		ensurePickaxeEquipped(player)
+		refreshEquippedPickaxeVisual(player)
+	end)
+end
 
-	getOrCreateInventory(player)
-end)
+Players.PlayerAdded:Connect(setupPlayer)
 
 Players.PlayerRemoving:Connect(function(player)
-	lastHitTimes[player] = nil
-	lastMineRemoteTimes[player] = nil
-	resetStreak(player)
+	playerData[player] = nil
+	lastHit[player] = nil
 end)
 
--- ====== initial rock spawn ======
-for _, spawnPoint in ipairs(spawnFolder:GetChildren()) do
-	if spawnPoint:IsA("BasePart") then
-		for _ = 1, ROCKS_PER_POINT do
-			spawnOreAtPoint(spawnPoint)
-		end
-	end
-end
-end
+-- =========================
+-- Startup
+-- =========================
+task.defer(function()
+	initialSpawnAll()
+end)
