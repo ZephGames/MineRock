@@ -191,7 +191,7 @@ local function getPickaxeStats(player)
 end
 
 local function findPickaxeTemplate(tierIndex)
-    local ToolRoot = ReplicatedStorage:FindFirstChild("Tools")
+    local ToolRoot = ReplicatedStorage:FindFirstChild("Tools") or ReplicatedStorage:WaitForChild("Tools", 2)
     local canonical = ToolRoot and ToolRoot:FindFirstChild("Pickaxe")
     if canonical and canonical:IsA("Tool") then
         return canonical
@@ -217,7 +217,7 @@ local function findPickaxeTemplate(tierIndex)
     addCandidate("Pickaxe")
 
     local containers = {
-        ReplicatedStorage:FindFirstChild("Tools"),
+        ToolRoot,
         ReplicatedStorage:FindFirstChild("Pickaxes"),
         ReplicatedStorage:FindFirstChild("PickaxeTools"),
         ServerStorage:FindFirstChild("Tools"),
@@ -236,7 +236,20 @@ local function findPickaxeTemplate(tierIndex)
         end
     end
 
-    return nil
+    local function searchDescendants(root)
+        if not root then return nil end
+        for _, inst in ipairs(root:GetDescendants()) do
+            if inst:IsA("Tool") then
+                local nameLower = string.lower(inst.Name)
+                if inst:GetAttribute("IsPickaxe") == true or nameLower:find("pickaxe") then
+                    return inst
+                end
+            end
+        end
+        return nil
+    end
+
+    return searchDescendants(ReplicatedStorage) or searchDescendants(ServerStorage)
 end
 
 local function clearExistingPickaxes(player)
@@ -269,16 +282,46 @@ local function ensureBackpack(player)
 end
 
 local _templateWarned = {}
+local MAX_TEMPLATE_RETRIES = 3
+local ensurePickaxeEquipped
 
-local function ensurePickaxeEquipped(player, tierIndex)
+local function reEquipAllPlayers()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        ensurePickaxeEquipped(plr, getPickaxeTierValue(plr))
+    end
+end
+
+local function onPickaxeTemplateAdded(child)
+    if not (child and child:IsA("Tool")) then return end
+    local nameLower = string.lower(child.Name)
+    if child:GetAttribute("IsPickaxe") == true or nameLower:find("pickaxe") then
+        reEquipAllPlayers()
+    end
+end
+
+local function watchForPickaxeTemplates(folder)
+    if not folder then return end
+    folder.ChildAdded:Connect(onPickaxeTemplateAdded)
+end
+
+ensurePickaxeEquipped = function(player, tierIndex, attempt)
+    attempt = attempt or 1
     local template = findPickaxeTemplate(tierIndex)
     if not template then
-        if not _templateWarned[player.UserId] then
+        if attempt < MAX_TEMPLATE_RETRIES then
+            task.delay(0.5 * attempt, function()
+                if player and player.Parent then
+                    ensurePickaxeEquipped(player, getPickaxeTierValue(player), attempt + 1)
+                end
+            end)
+        elseif not _templateWarned[player.UserId] then
             _templateWarned[player.UserId] = true
             warn(string.format("No pickaxe template found for %s at tier %d", player.Name, tierIndex))
         end
         return
     end
+
+    _templateWarned[player.UserId] = nil
 
     local backpack = ensureBackpack(player)
     if not backpack then return end
@@ -294,6 +337,29 @@ local function ensurePickaxeEquipped(player, tierIndex)
         humanoid:EquipTool(newTool)
     end
 end
+
+watchForPickaxeTemplates(ReplicatedStorage:FindFirstChild("Tools"))
+watchForPickaxeTemplates(ReplicatedStorage:FindFirstChild("Pickaxes"))
+watchForPickaxeTemplates(ReplicatedStorage:FindFirstChild("PickaxeTools"))
+watchForPickaxeTemplates(ServerStorage:FindFirstChild("Tools"))
+watchForPickaxeTemplates(ServerStorage:FindFirstChild("Pickaxes"))
+watchForPickaxeTemplates(ServerStorage:FindFirstChild("PickaxeTools"))
+
+ReplicatedStorage.ChildAdded:Connect(function(child)
+    local nameLower = string.lower(child.Name)
+    if nameLower == "tools" or nameLower == "pickaxes" or nameLower == "pickaxetools" then
+        watchForPickaxeTemplates(child)
+    end
+    onPickaxeTemplateAdded(child)
+end)
+
+ServerStorage.ChildAdded:Connect(function(child)
+    local nameLower = string.lower(child.Name)
+    if nameLower == "tools" or nameLower == "pickaxes" or nameLower == "pickaxetools" then
+        watchForPickaxeTemplates(child)
+    end
+    onPickaxeTemplateAdded(child)
+end)
 
 local function updateStreak(player, now)
     local data = streakState[player]
