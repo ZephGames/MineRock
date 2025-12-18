@@ -506,23 +506,12 @@ shopOverlay.Parent = gui
 
 local shopFrame = Instance.new("Frame")
 shopFrame.Name = "ShopFrame"
-shopFrame.Size = UDim2.new(0.65, 0, 0.65, 0)
+shopFrame.Size = UDim2.new(0.7, 0, 0.7, 0)
 shopFrame.Position = UDim2.new(0.5, 0, 1.5, 0) -- Hidden Bottom
 shopFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-shopFrame.BackgroundColor3 = THEME.Glass
-shopFrame.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
-shopFrame.BorderSizePixel = 0
+shopFrame.BackgroundTransparency = 1
 shopFrame.ZIndex = 6
 shopFrame.Parent = shopOverlay
-createCorner(shopFrame, 18)
-createStroke(shopFrame, THEME.BorderDefault, 1.5, 0.7)
-
-local shopPadding = Instance.new("UIPadding")
-shopPadding.PaddingTop = UDim.new(0, 16)
-shopPadding.PaddingBottom = UDim.new(0, 16)
-shopPadding.PaddingLeft = UDim.new(0, 16)
-shopPadding.PaddingRight = UDim.new(0, 16)
-shopPadding.Parent = shopFrame
 
 local shopScale = Instance.new("UIScale")
 shopScale.Parent = shopFrame
@@ -562,7 +551,7 @@ end
 attachViewportListener()
 
 -- Shop Sidebar (Left)
-local shopSidebar = createGlassPanel(shopFrame, UDim2.new(0.25, -10, 1, 0), UDim2.new(0, 0, 0, 0))
+local shopSidebar = createGlassPanel(shopFrame, UDim2.new(0.25, -15, 1, 0), UDim2.new(0, 0, 0, 0))
 shopSidebar.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
 local shopSidebarLayout = Instance.new("UIListLayout")
 shopSidebarLayout.Padding = UDim.new(0, 10)
@@ -613,22 +602,29 @@ local shopTabBtns = {}
 local shopPages = {}
 
 local function switchShopTab(name)
-	for n, p in pairs(shopPages) do p.Visible = false end
-	for n, btn in pairs(shopTabBtns) do
-		local isMe = (n == name)
-		if isMe then
-			tween(btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
-		else
-			tween(btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
-		end
-	end
-	if shopPages[name] then
-		shopPages[name].Visible = true
-	end
+        for n, p in pairs(shopPages) do p.Visible = false end
+        for n, data in pairs(shopTabBtns) do
+                local isMe = (n == name)
+                data.Btn:SetAttribute("Selected", isMe)
+                if isMe then
+                        tween(data.Btn, {BackgroundTransparency = 0.1, BackgroundColor3 = THEME.GlassHover}, 0.2)
+                        data.Stroke.Transparency = 0
+                        data.Grad.Enabled = true
+                else
+                        tween(data.Btn, {BackgroundTransparency = 0.3, BackgroundColor3 = THEME.Glass}, 0.2)
+                        data.Stroke.Transparency = 0.8
+                        data.Grad.Enabled = false
+                end
+        end
+        if shopPages[name] then
+                shopPages[name].Visible = true
+                shopPages[name].Position = UDim2.new(0,0,0.05,0)
+                tween(shopPages[name], {Position = UDim2.new(0,0,0,0)}, 0.3, Enum.EasingStyle.Back)
+        end
 end
 
 -- Shop Content (Right)
-local shopContent = createGlassPanel(shopFrame, UDim2.new(0.75, 0, 1, 0), UDim2.new(0.25, 12, 0, 0))
+local shopContent = createGlassPanel(shopFrame, UDim2.new(0.75, 0, 1, 0), UDim2.new(0.25, 15, 0, 0))
 shopContent.BackgroundTransparency = SHOP_PANEL_TRANSPARENCY
 local shopContentPad = Instance.new("UIPadding")
 shopContentPad.PaddingTop = UDim.new(0, 20)
@@ -638,10 +634,10 @@ shopContentPad.PaddingRight = UDim.new(0, 20)
 shopContentPad.Parent = shopContent
 
 -- Create Tab Buttons in Sidebar
-local btnSell = createGlassButton(shopSidebar, "Sell Ores", UDim2.new(0.9, 0, 0, 50))
-shopTabBtns["Sell"] = btnSell
-local btnPicks = createGlassButton(shopSidebar, "Pickaxes", UDim2.new(0.9, 0, 0, 50))
-shopTabBtns["Pickaxes"] = btnPicks
+local btnSell, sStroke, sGrad = createGlassButton(shopSidebar, "Sell Ores", UDim2.new(0.9, 0, 0, 50))
+shopTabBtns["Sell"] = {Btn = btnSell, Stroke = sStroke, Grad = sGrad}
+local btnPicks, pStroke, pGrad = createGlassButton(shopSidebar, "Pickaxes", UDim2.new(0.9, 0, 0, 50))
+shopTabBtns["Pickaxes"] = {Btn = btnPicks, Stroke = pStroke, Grad = pGrad}
 
 -- Pages
 local sellPageFrame = Instance.new("Frame")
